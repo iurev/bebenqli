@@ -3,6 +3,7 @@ import subprocess
 import os
 import re
 import sys
+import atexit
 import threading
 import time
 from blessed import Terminal
@@ -721,16 +722,26 @@ def cli(args):
 
 
 def set_window_title(name="bebenqli"):
-    # tmux names a window after its running process (so it'd show "python3").
-    # \ek..\e\\ sets the tmux window name; OSC 2 sets the terminal/pane title
-    # for plain xterm-likes. Harmless where unsupported.
-    sys.stdout.write(f"\033k{name}\033\\")
+    # tmux re-derives a window's name from its running process (so a long-lived
+    # python3 just shows "python3"), and the \ek escape no longer disables that
+    # on modern tmux. Renaming via the command DOES turn automatic-rename off
+    # for the window, so it sticks. OSC 2 covers plain terminals.
+    if os.environ.get("TMUX"):
+        subprocess.run(["tmux", "rename-window", name], capture_output=True)
     sys.stdout.write(f"\033]2;{name}\007")
     sys.stdout.flush()
 
 
+def restore_window_title():
+    # Hand the window name back to tmux so it tracks the shell again on exit.
+    if os.environ.get("TMUX"):
+        subprocess.run(["tmux", "set-window-option", "automatic-rename", "on"],
+                       capture_output=True)
+
+
 def main():
     set_window_title()
+    atexit.register(restore_window_title)   # revert name on quit / Ctrl-C
     term = Terminal()
     ui   = UI()
 
