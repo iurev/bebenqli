@@ -8,7 +8,7 @@ menu or BenQ's official app.
 Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.1** — expect
 rough edges.
 
-![demo](docs/demo.gif)
+![bebenqli TUI](https://github.com/user-attachments/assets/74a4b32b-ff1a-4ccf-a0cb-66d1e9b2fc47)
 
 ---
 
