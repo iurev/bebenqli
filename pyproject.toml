@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bebenqli"
+version = "0.0.1"
+description = "TUI + CLI to control BenQ RD280U monitors over DDC/CI (ddcutil)"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Vitalii Iurev" }]
+keywords = ["benq", "rd280u", "ddc", "ddc-ci", "ddcutil", "monitor", "tui"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
+dependencies = ["blessed>=1.19"]
+
+[project.urls]
+Homepage = "https://github.com/iurev/bebenqli"
+Issues = "https://github.com/iurev/bebenqli/issues"
+
+[project.scripts]
+bebenqli = "bebenqli:run"
+
+[tool.setuptools]
+py-modules = ["bebenqli"]
