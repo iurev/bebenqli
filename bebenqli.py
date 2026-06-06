@@ -720,7 +720,17 @@ def cli(args):
     return usage()
 
 
+def set_window_title(name="bebenqli"):
+    # tmux names a window after its running process (so it'd show "python3").
+    # \ek..\e\\ sets the tmux window name; OSC 2 sets the terminal/pane title
+    # for plain xterm-likes. Harmless where unsupported.
+    sys.stdout.write(f"\033k{name}\033\\")
+    sys.stdout.write(f"\033]2;{name}\007")
+    sys.stdout.flush()
+
+
 def main():
+    set_window_title()
     term = Terminal()
     ui   = UI()
 
