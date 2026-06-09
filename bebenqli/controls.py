@@ -74,6 +74,17 @@ HIDDEN   = ("dead", "missing")                        # not rendered at all
 INTERACT = [i for i, c in enumerate(CONTROLS) if c["type"] not in NONSEL]
 
 
+def _header_has_child(start, stop_types, item):
+    # True if any visible item follows `start` before the header's span ends
+    # (the span ends at the next row whose type is in stop_types).
+    for j in range(start + 1, len(CONTROLS)):
+        if CONTROLS[j]["type"] in stop_types:
+            return False
+        if item[j]:
+            return True
+    return False
+
+
 def _renderable():
     # Indices to draw: real items, plus headers that have ≥1 visible child.
     # A section spans until the next section/group; a group until the next group.
@@ -82,18 +93,10 @@ def _renderable():
             for i in range(n)]
     keep = set(i for i in range(n) if item[i])
     for i, c in enumerate(CONTROLS):
-        if c["type"] == "section":
-            j = i + 1
-            while j < n and CONTROLS[j]["type"] not in ("section", "group"):
-                if item[j]:
-                    keep.add(i); break
-                j += 1
-        elif c["type"] == "group":
-            j = i + 1
-            while j < n and CONTROLS[j]["type"] != "group":
-                if item[j]:
-                    keep.add(i); break
-                j += 1
+        if c["type"] == "section" and _header_has_child(i, ("section", "group"), item):
+            keep.add(i)
+        elif c["type"] == "group" and _header_has_child(i, ("group",), item):
+            keep.add(i)
     return keep
 
 RENDER = _renderable()

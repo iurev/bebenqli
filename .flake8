@@ -1,0 +1,5 @@
+[flake8]
+# Readability gate: cognitive complexity (nesting-aware) + pyflakes logic
+# errors only — no style nags. 15 is SonarSource's "hard to read" threshold.
+select = CCR001, F
+max-cognitive-complexity = 15

@@ -7,6 +7,24 @@ def bar(val, lo, hi, w=12):
     return "█" * max(0, min(w, f)) + "░" * max(0, min(w, w - f))
 
 
+def _render_cycle(label, ctrl, val, blank):
+    if blank:
+        return f"    {label}  {'':18}"
+    idx  = ctrl["opts"].index(val) if val in ctrl["opts"] else 0
+    name = ctrl["names"][idx]
+    return f"    {label}  {name:<18}"
+
+
+def _render_range(label, ctrl, val, blank, entry):
+    lo, hi = ctrl["min"], ctrl["max"]
+    if entry is not None:
+        return f"    {label}  type: {entry}█  (={lo}..{hi})"
+    if blank:
+        return f"    {label}  {'':12}  {'':7}"
+    vs = f"{val:{len(str(hi))}}/{hi}"
+    return f"    {label}  {bar(val, lo, hi)}  {vs:>7}"
+
+
 def render_row(ctrl, val, loaded, pending, blink_on, entry=None):
     t = ctrl["type"]
     if t == "group":                                  # top level, flush-left
@@ -15,28 +33,17 @@ def render_row(ctrl, val, loaded, pending, blink_on, entry=None):
         return f"  ▎{ctrl['label']}"
 
     label = f"{ctrl['label']:<14}"                    # items, indent 4
-
     if t == "missing":
         return f"    {label}  [not mapped]"
     if t == "dead":
         return f"    {label}  [hw n/a]"
-
-    blank = pending is not None and not blink_on
     if not loaded:
         return f"    {label}  @"
 
+    blank = pending is not None and not blink_on
     if t == "cycle":
-        idx  = ctrl["opts"].index(val) if val in ctrl["opts"] else 0
-        name = ctrl["names"][idx]
-        return f"    {label}  {'':18}" if blank else f"    {label}  {name:<18}"
-    else:
-        lo, hi = ctrl["min"], ctrl["max"]
-        if entry is not None:
-            return f"    {label}  type: {entry}█  (={lo}..{hi})"
-        d = len(str(hi))
-        b = bar(val, lo, hi)
-        vs = f"{val:{d}}/{hi}"
-        return f"    {label}  {'':12}  {'':7}" if blank else f"    {label}  {b}  {vs:>7}"
+        return _render_cycle(label, ctrl, val, blank)
+    return _render_range(label, ctrl, val, blank, entry)
 
 
 def _fmt(c, v):

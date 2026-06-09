@@ -22,7 +22,8 @@ classifiers = [
 dependencies = ["blessed>=1.19"]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov>=4"]
+dev = ["pytest>=7", "pytest-cov>=4",
+       "flake8>=7", "flake8-cognitive-complexity>=0.1", "pylint>=3"]
 
 [project.urls]
 Homepage = "https://github.com/iurev/bebenqli"
