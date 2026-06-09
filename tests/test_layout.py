@@ -20,7 +20,7 @@ def test_renderable_skips_group_with_no_visible_children(monkeypatch):
         {"type": "group",   "label": "Empty"},
         {"type": "dead",    "label": "Gone"},      # hidden -> group stays empty
     ]
-    monkeypatch.setattr(b, "CONTROLS", controls)
+    monkeypatch.setattr(b.controls, "CONTROLS", controls)
     keep = b._renderable()
     assert 0 in keep            # "Real" group has a visible child
     assert 1 in keep            # the range itself
