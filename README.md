@@ -40,13 +40,13 @@ while you change settings on the monitor, to map new ones.
 pipx install git+https://github.com/iurev/bebenqli
 ```
 
-**Raw script** (no packaging, just run it):
+**From a clone** (no install, just run the package):
 
 ```bash
 git clone https://github.com/iurev/bebenqli
 cd bebenqli
 pip install blessed          # only dependency
-./bebenqli.py
+python -m bebenqli
 ```
 
 `ddcutil` itself is a *system* package — install it from your distro

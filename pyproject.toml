@@ -40,6 +40,7 @@ addopts = "--cov=bebenqli --cov-branch --cov-report=term-missing --cov-fail-unde
 
 [tool.coverage.run]
 source = ["bebenqli"]
+omit = ["bebenqli/__main__.py"]   # trivial `python -m` entry shim
 
 [tool.coverage.report]
 exclude_lines = [
