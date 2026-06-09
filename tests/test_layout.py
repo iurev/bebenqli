@@ -1,15 +1,15 @@
 import bebenqli as b
 
 
-def test_read_returns_none_for_write_only_control():
+def test_read_returns_none_for_write_only_control(ddc):
     # _read short-circuits write-only controls; CLI never reaches this path
     # (it special-cases noread earlier), so exercise it directly.
-    assert b._read({"vcp": "d7", "noread": True}) is None
+    assert b._read(ddc, {"vcp": "d7", "noread": True}) is None
 
 
-def test_read_returns_value_for_readable_control(wired):
-    wired.values["62"] = 33
-    assert b._read({"vcp": "62"}) == 33
+def test_read_returns_value_for_readable_control(mon, ddc):
+    mon.values["62"] = 33
+    assert b._read(ddc, {"vcp": "62"}) == 33
 
 
 def test_renderable_skips_group_with_no_visible_children(monkeypatch):

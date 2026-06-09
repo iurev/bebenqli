@@ -1,96 +1,23 @@
 #!/usr/bin/env python3
 import os
-import re
 import sys
 import atexit
 import threading
 import time
 from blessed import Terminal
 
+from . import proc
 from .controls import (CONTROLS, W, HEADERS, NONSEL, HIDDEN, INTERACT, RENDER,
                        SCAN_CODES, NOISE, MAPPED, slug, _renderable, _cli_name)
 from .format import bar, render_row, _fmt
-from .proc import run_proc
+from .ddc import Ddc, build_cmd, detect_bus, resolve_bus, MODEL
 
 __version__ = "0.0.1"
 
-MODEL   = "RD280U"          # auto-detect: i2c bus whose monitor matches this
-BUS     = None              # resolved at startup (--bus / $BEBENQLI_BUS / detect)
-CMD     = None              # ddcutil base command, built once bus is known
-VERBOSE = False             # CLI -v: echo each ddcutil command to stderr
-
-
-def build_cmd(bus):
-    return ["ddcutil", "--bus", str(bus), "--permit-unknown-feature"]
-
-
-def detect_bus(model=MODEL):
-    # Parse `ddcutil detect`; return the i2c bus number whose monitor model
-    # string contains `model`. The bus is assigned by the kernel per GPU+port,
-    # so it differs on every machine — never hardcode it.
-    try:
-        out = run_proc(["ddcutil", "detect"], text=True).stdout
-    except FileNotFoundError:
-        return None
-    bus = None
-    for line in out.splitlines():
-        m = re.search(r"/dev/i2c-(\d+)", line)
-        if m:
-            bus = m.group(1)                 # start of a new display block
-        elif model.lower() in line.lower() and bus is not None:
-            return bus                       # this block's monitor matches
-    return None
-
-
-def resolve_bus(explicit=None):
-    # Priority: explicit --bus  >  $BEBENQLI_BUS  >  auto-detect by model.
-    if explicit is not None:
-        return str(explicit)
-    env = os.environ.get("BEBENQLI_BUS")
-    if env:
-        return env
-    return detect_bus()
-
-
-def setvcp(code, value, chan=None, noverify=False):
-    # Some BenQ registers (d9 = MoonHalo) are 16-bit multiplexed:
-    # high byte selects a sub-feature channel, low byte is its value.
-    # Such writes never pass ddcutil's read-back verify (it only reads the
-    # low byte), so use --noverify to skip the retry storm. d7 (MH on/off)
-    # also needs it — its read-back returns a composite ambient value.
-    extra = []
-    if chan is not None:
-        value = (chan << 8) | value
-        extra = ["--noverify"]
-    elif noverify:
-        extra = ["--noverify"]
-    cmd = CMD + extra + ["setvcp", code, str(value)]
-    if VERBOSE:
-        print("$ " + " ".join(cmd), file=sys.stderr)
-    r = run_proc(cmd)
-    return r.returncode == 0   # True = ddcutil accepted the write
-
-
-def getvcp(code):
-    cmd = CMD + ["getvcp", code]
-    if VERBOSE:
-        print("$ " + " ".join(cmd), file=sys.stderr)
-    r = run_proc(cmd, text=True)
-    out = r.stdout
-    m = re.search(r"current value\s*=\s*(\d+)", out)
-    if m: return int(m.group(1))
-    m = re.search(r"sl=0x([0-9a-fA-F]+)", out)
-    if m: return int(m.group(1), 16)
-    m = re.search(r"Volume level:\s*(\d+)", out)
-    if m: return int(m.group(1))
-    # fallback: trailing "(0x..)" / "(00x..)" hex, e.g. volume 0 = "Fixed (default) level (0x00)"
-    m = re.search(r"\(0*x([0-9a-fA-F]+)\)", out)
-    if m: return int(m.group(1), 16)
-    return None
-
 
 class UI:  # pragma: no cover
-    def __init__(self):
+    def __init__(self, ddc):
+        self.ddc = ddc
         n = len(CONTROLS)
         self.vals      = [0] * n
         self.loaded    = [c["type"] in ("group", "section", "missing", "dead") for c in CONTROLS]
@@ -173,7 +100,7 @@ class UI:  # pragma: no cover
                 target = self.vals[idx]
                 self.pending[idx] = target
             ctrl = CONTROLS[idx]
-            setvcp(ctrl["vcp"], target, ctrl.get("chan"), ctrl.get("noverify"))
+            self.ddc.setvcp(ctrl["vcp"], target, ctrl.get("chan"), ctrl.get("noverify"))
             if ctrl.get("noread"):
                 with self.lock:                       # can't read back; trust write
                     if self.pending[idx] == target:
@@ -241,7 +168,7 @@ class UI:  # pragma: no cover
                 if self.debug != idx:
                     return
                 self.dbg_prog = (n, len(SCAN_CODES))
-            v = getvcp(code)
+            v = self.ddc.getvcp(code)
             if v is not None:
                 base[code] = v
                 live.append(code)
@@ -260,7 +187,7 @@ class UI:  # pragma: no cover
                 with self.lock:
                     if self.debug != idx:
                         return
-                v = getvcp(code)
+                v = self.ddc.getvcp(code)
                 if v is None or v == last[code]:
                     continue
                 last[code] = v
@@ -304,7 +231,7 @@ class UI:  # pragma: no cover
             with self.lock:
                 if self.debug != idx:
                     return
-            v = getvcp(vcp)
+            v = self.ddc.getvcp(vcp)
             if v is not None:
                 with self.lock:
                     if self.debug != idx:
@@ -382,7 +309,7 @@ class UI:  # pragma: no cover
     def _poll(self, idx, target):
         deadline = time.time() + 8.0
         while time.time() < deadline:
-            actual = getvcp(CONTROLS[idx]["vcp"])
+            actual = self.ddc.getvcp(CONTROLS[idx]["vcp"])
             with self.lock:
                 if self.pending[idx] != target:
                     return
@@ -455,10 +382,10 @@ def _cli_controls():
     return out
 
 
-def _read(c):
+def _read(ddc, c):
     if c.get("noread"):
         return None                       # write-only (d7 / d9 color temp)
-    return getvcp(c["vcp"])
+    return ddc.getvcp(c["vcp"])
 
 
 def _resolve(c, valstr):
@@ -483,10 +410,9 @@ def _resolve(c, valstr):
     return max(c["min"], min(c["max"], iv))
 
 
-def cli(args):
-    global VERBOSE
+def cli(ddc, args):
     if any(a in ("-v", "--verbose") for a in args):
-        VERBOSE = True
+        ddc.verbose = True
         args = [a for a in args if a not in ("-v", "--verbose")]
     controls = _cli_controls()
 
@@ -508,7 +434,7 @@ def cli(args):
     if cmd == "list":
         width = max(len(n) for n in controls)
         for name, c in controls.items():
-            cur = "(write-only)" if c.get("noread") else _fmt(c, _read(c))
+            cur = "(write-only)" if c.get("noread") else _fmt(c, _read(ddc, c))
             if c["type"] == "cycle":
                 extra = "  {" + "|".join(c["names"]) + "}"
             else:
@@ -524,7 +450,7 @@ def cli(args):
         if c.get("noread"):
             print("(write-only — cannot read)")
             return 0
-        print(_fmt(c, _read(c)))
+        print(_fmt(c, _read(ddc, c)))
         return 0
 
     if cmd in ("set", "lazyset"):
@@ -538,7 +464,7 @@ def cli(args):
         except ValueError as e:
             print(e, file=sys.stderr)
             return 1
-        ok = setvcp(c["vcp"], target, c.get("chan"), c.get("noverify"))
+        ok = ddc.setvcp(c["vcp"], target, c.get("chan"), c.get("noverify"))
         shown = _fmt(c, target)
 
         if cmd == "lazyset":                         # fire-and-forget, no check
@@ -552,7 +478,7 @@ def cli(args):
         if c.get("noread"):                          # can't read back this control
             print(f"{name} = {shown}  (write-only, unverified)")
             return 0
-        got = _read(c)                               # read-back compare
+        got = _read(ddc, c)                          # read-back compare
         if got == target:
             print(f"{name} = {shown}  (verified)")
             return 0
@@ -569,7 +495,7 @@ def set_window_title(name="bebenqli"):
     # on modern tmux. Renaming via the command DOES turn automatic-rename off
     # for the window, so it sticks. OSC 2 covers plain terminals.
     if os.environ.get("TMUX"):
-        run_proc(["tmux", "rename-window", name])
+        proc.run_proc(["tmux", "rename-window", name])
     sys.stdout.write(f"\033]2;{name}\007")
     sys.stdout.flush()
 
@@ -577,14 +503,14 @@ def set_window_title(name="bebenqli"):
 def restore_window_title():
     # Hand the window name back to tmux so it tracks the shell again on exit.
     if os.environ.get("TMUX"):
-        run_proc(["tmux", "set-window-option", "automatic-rename", "on"])
+        proc.run_proc(["tmux", "set-window-option", "automatic-rename", "on"])
 
 
-def main():  # pragma: no cover
+def main(ddc):  # pragma: no cover
     set_window_title()
     atexit.register(restore_window_title)   # revert name on quit / Ctrl-C
     term = Terminal()
-    ui   = UI()
+    ui   = UI(ddc)
 
     def read(i):
         ctrl = CONTROLS[i]
@@ -595,7 +521,7 @@ def main():  # pragma: no cover
                 ui.vals[i]   = ctrl["opts"][0] if ctrl["type"] == "cycle" else ctrl.get("min", 0)
                 ui.loaded[i] = True
             return
-        v = getvcp(ctrl["vcp"])
+        v = ddc.getvcp(ctrl["vcp"])
         with ui.lock:
             if v is None:
                 v = ctrl["opts"][0] if ctrl["type"] == "cycle" else ctrl.get("min", 0)
@@ -688,7 +614,6 @@ def main():  # pragma: no cover
 
 
 def run(argv=None):
-    global BUS, CMD
     args = list(sys.argv[1:] if argv is None else argv)
 
     if any(a in ("-V", "--version") for a in args):
@@ -713,17 +638,17 @@ def run(argv=None):
         i += 1
     args = rest
 
-    BUS = resolve_bus(explicit)
-    if BUS is None:
+    bus = resolve_bus(explicit)
+    if bus is None:
         print(f"error: no monitor matching '{MODEL}' found.\n"
               f"check `ddcutil detect`, then pass --bus N or set $BEBENQLI_BUS.",
               file=sys.stderr)
         return 1
-    CMD = build_cmd(BUS)
+    ddc = Ddc(bus)
 
     if args:
-        return cli(args)
-    main()
+        return cli(ddc, args)
+    main(ddc)
     return 0
 
 

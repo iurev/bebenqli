@@ -5,6 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import bebenqli  # noqa: E402
+from bebenqli import proc  # noqa: E402
 
 
 class FakeProc:
@@ -78,28 +79,20 @@ class FakeMonitor:
         return [c for c in self.calls if all(n in c for n in needles)]
 
 
-@pytest.fixture(autouse=True)
-def reset_globals():
-    """Each test starts from a clean module state."""
-    bebenqli.BUS = None
-    bebenqli.CMD = None
-    bebenqli.VERBOSE = False
-    yield
-    bebenqli.BUS = None
-    bebenqli.CMD = None
-    bebenqli.VERBOSE = False
-
-
 @pytest.fixture
 def mon(monkeypatch):
     m = FakeMonitor()
-    monkeypatch.setattr(bebenqli, "run_proc", m.run_proc)
+    monkeypatch.setattr(proc, "run_proc", m.run_proc)   # attribute patch — the seam
     return m
 
 
 @pytest.fixture
+def ddc(mon):
+    """A Ddc wired to the faked monitor on bus 7 (same instance as `mon`)."""
+    return bebenqli.Ddc("7")
+
+
+@pytest.fixture
 def wired(mon):
-    """Monitor plus a resolved bus/CMD, as if run() already bootstrapped."""
-    bebenqli.BUS = "7"
-    bebenqli.CMD = bebenqli.build_cmd("7")
+    """Back-compat alias for the faked monitor (was monitor + bus globals)."""
     return mon
