@@ -160,29 +160,36 @@ class UI:  # pragma: no cover
 
     # ── Discovery: poll all candidate codes, find which one moves ───────────
     def _discover(self, idx):
-        # Baseline: read every candidate, keep ones that answer.
-        base, live = {}, []
+        base = self._discover_baseline(idx)
+        if base is not None:                       # None = stopped mid-baseline
+            self._discover_watch(idx, base)
+
+    def _discover_baseline(self, idx):
+        # Read every candidate once; keep the codes that answer. Returns the
+        # baseline {code: value}, or None if the user stopped during the sweep.
+        base = {}
         for n, code in enumerate(SCAN_CODES, 1):
             with self.lock:
                 if self.debug != idx:
-                    return
+                    return None
                 self.dbg_prog = (n, len(SCAN_CODES))
             v = self.ddc.getvcp(code)
             if v is not None:
                 base[code] = v
-                live.append(code)
         with self.lock:
             if self.debug != idx:
-                return
+                return None
             self.dbg_base  = dict(base)
-            self.dbg_live  = list(live)
+            self.dbg_live  = list(base)
             self.dbg_phase = "watching"
+        return base
 
+    def _discover_watch(self, idx, base):
+        # Sweep the live codes forever, appending distinct new values per code.
         last = dict(base)
-        # Watch loop: sweep live codes, append distinct new values per code.
         while True:
             changed = False
-            for code in live:
+            for code in base:
                 with self.lock:
                     if self.debug != idx:
                         return
@@ -190,18 +197,24 @@ class UI:  # pragma: no cover
                 if v is None or v == last[code]:
                     continue
                 last[code] = v
-                with self.lock:
-                    if self.debug != idx:
-                        return
-                    trail = self.dbg_trail.setdefault(code, [base[code]])
-                    if v != trail[-1]:
-                        trail.append(v)
-                        changed = True
+                if self._record_step(idx, code, base[code], v):
+                    changed = True
             if changed:
                 with self.lock:
                     snap = {c: list(t) for c, t in self.dbg_trail.items()}
                 self._write_discover_yaml(idx, snap)
             time.sleep(0.05)
+
+    def _record_step(self, idx, code, baseline, v):
+        # Append v to the code's trail if it differs from the last entry.
+        with self.lock:
+            if self.debug != idx:
+                return False
+            trail = self.dbg_trail.setdefault(code, [baseline])
+            if v != trail[-1]:
+                trail.append(v)
+                return True
+        return False
 
     def _write_discover_yaml(self, idx, trail):
         ctrl = CONTROLS[idx]
@@ -320,55 +333,171 @@ class UI:  # pragma: no cover
             if self.pending[idx] == target:
                 self.pending[idx] = None
 
+    def _row_text(self, i, ctrl, vals, loaded, pending, ticks, pool, q):
+        blink_on = ticks[i] % 2 == 0
+        ent      = self.entry_buf if i == self.entry else None
+        content  = render_row(ctrl, vals[i], loaded[i], pending[i], blink_on, ent)
+        # dim non-matching rows during search (keep spacing, drop highlight)
+        if self.searching and q and ctrl["type"] not in HEADERS and i not in pool:
+            content = f" {content[1:]}"
+        return content
+
+    def _cycle_options(self, i, ctrl, vals, loaded):
+        # selected cycle: numbered options below the row for direct pick
+        if not (i == self.sel and ctrl["type"] == "cycle" and loaded[i]):
+            return []
+        cur = vals[i]
+        out = []
+        for n, name in enumerate(ctrl["names"], 1):
+            mark = "●" if ctrl["opts"][n - 1] == cur else " "
+            out.append(f"│{f'       {n} {mark} {name}':<{W}}│")
+        return out
+
+    def _footer(self):
+        if self.searching:
+            return f"│ {f'/ {self.search_q}█':<{W-1}}│"
+        return f"│ {'↑↓ move ←→/digit set / find ! listen q quit':<{W-1}}│"
+
     def draw(self, term):
         with self.lock:
             vals    = list(self.vals)
             loaded  = list(self.loaded)
             pending = list(self.pending)
             ticks   = list(self.ticks)
-
         pool = self._filtered()
         q    = self.search_q.lower()
 
-        lines = []
-        lines.append(f"╭{'─' * W}╮")
-        lines.append(f"│ {'BenQ RD280U Monitor Control':<{W-1}}│")
-        lines.append(f"╞{'═' * W}╡")
-
+        lines = [f"╭{'─' * W}╮",
+                 f"│ {'BenQ RD280U Monitor Control':<{W-1}}│",
+                 f"╞{'═' * W}╡"]
         for i, ctrl in enumerate(CONTROLS):
             if i not in RENDER:                   # hidden items + empty headers
                 continue
-            blink_on = ticks[i] % 2 == 0
-            ent      = self.entry_buf if i == self.entry else None
-            content  = render_row(ctrl, vals[i], loaded[i], pending[i], blink_on, ent)
-            # dim non-matching rows during search
-            if self.searching and q and ctrl["type"] not in HEADERS:
-                in_pool = i in pool
-                if not in_pool:
-                    content = f" {content[1:]}"  # keep spacing, no highlight
-            padded = f"{content:<{W}}"
+            padded = f"{self._row_text(i, ctrl, vals, loaded, pending, ticks, pool, q):<{W}}"
             if ctrl["type"] not in HEADERS and i == self.sel:
                 lines.append(f"│{term.reverse}{padded}{term.normal}│")
             else:
                 lines.append(f"│{padded}│")
-
-            # selected cycle: show numbered options below for direct pick
-            if i == self.sel and ctrl["type"] == "cycle" and loaded[i]:
-                cur = vals[i]
-                for n, name in enumerate(ctrl["names"], 1):
-                    mark = "●" if ctrl["opts"][n - 1] == cur else " "
-                    opt  = f"       {n} {mark} {name}"
-                    lines.append(f"│{opt:<{W}}│")
-
+            lines += self._cycle_options(i, ctrl, vals, loaded)
         lines.append(f"╞{'═' * W}╡")
-        if self.searching:
-            hint = f"/ {self.search_q}█"
-            lines.append(f"│ {hint:<{W-1}}│")
-        else:
-            lines.append(f"│ {'↑↓ move ←→/digit set / find ! listen q quit':<{W-1}}│")
+        lines.append(self._footer())
         lines.append(f"╰{'─' * W}╯")
-
         print(term.home + term.clear + "\n".join(lines), end="", flush=True)
+
+    # ── Startup read + event loop ──────────────────────────────────────────
+    def seed(self, i):
+        # Read one control's current value into the model at startup. Write-only
+        # controls (and headers) get a sensible default and are marked loaded.
+        ctrl = CONTROLS[i]
+        if ctrl["type"] in ("group", "section", "missing", "dead"):
+            return
+        default = ctrl["opts"][0] if ctrl["type"] == "cycle" else ctrl.get("min", 0)
+        if ctrl.get("noread"):                 # can't read back; trust local state
+            with self.lock:
+                self.vals[i], self.loaded[i] = default, True
+            return
+        v = self.ddc.getvcp(ctrl["vcp"])
+        with self.lock:
+            self.vals[i]   = self._clamp(ctrl, v, default)
+            self.loaded[i] = True
+
+    @staticmethod
+    def _clamp(ctrl, v, default):
+        if v is None:
+            return default
+        if ctrl["type"] == "range":
+            return max(ctrl["min"], min(ctrl["max"], v))
+        if ctrl["type"] == "cycle" and v not in ctrl["opts"]:
+            return ctrl["opts"][0]
+        return v
+
+    def _timeout(self):
+        # Poll fast while anything is animating (unloaded / pending) or in debug;
+        # otherwise block until the next key.
+        with self.lock:
+            animating = any(not self.loaded[i] or self.pending[i] is not None
+                            for i in INTERACT if CONTROLS[i]["type"] != "missing")
+        return 0.25 if (animating or self.debug is not None) else None
+
+    def _tick(self):
+        with self.lock:
+            for i in range(len(CONTROLS)):
+                if self.pending[i] is not None:
+                    self.ticks[i] += 1
+
+    def run_loop(self, term):
+        self.draw(term)
+        while True:
+            key = term.inkey(timeout=self._timeout())
+            if self.debug is not None:
+                self._handle_debug(term, key)
+                continue
+            if self.entry is not None:
+                self._handle_entry(key)
+                self.draw(term)
+                continue
+            if self.searching:
+                self._handle_search(key)
+            elif self._handle_normal(key):
+                break                          # q in normal mode -> quit
+            self._tick()
+            self.draw(term)
+
+    def _handle_debug(self, term, key):
+        if str(key) == "!" or key.name == "KEY_ESCAPE" or str(key).lower() == "q":
+            self.stop_debug()
+        self.draw_debug(term) if self.debug is not None else self.draw(term)
+
+    def _handle_entry(self, key):
+        if key.name == "KEY_ENTER" or str(key) in ("\n", "\r"):
+            self.commit_entry()
+        elif key.name == "KEY_ESCAPE":
+            self.entry, self.entry_buf = None, ""
+        elif key.name in ("KEY_BACKSPACE", "KEY_DELETE"):
+            self.entry_buf = self.entry_buf[:-1]
+            if not self.entry_buf:
+                self.entry = None
+        elif str(key).isdigit():
+            self.entry_buf += str(key)
+
+    def _handle_search(self, key):
+        if key.name == "KEY_ESCAPE" or str(key) in ("\n", "\r"):
+            self.searching = False
+        elif key.name == "KEY_UP":
+            self.move(-1)
+        elif key.name == "KEY_DOWN":
+            self.move(1)
+        elif key.name in ("KEY_BACKSPACE", "KEY_DELETE"):
+            self.search_q = self.search_q[:-1]
+        elif not key.is_sequence and str(key).isprintable():
+            self.search_q += str(key)
+            pool = self._filtered()            # auto-jump to first match
+            if pool and self.sel not in pool:
+                self.sel = pool[0]
+
+    def _handle_normal(self, key):
+        # Returns True to quit. Digit keys open number-entry (range) or jump to
+        # an option (cycle); the type test picks which.
+        if key.name in ("KEY_UP", "KEY_DOWN"):
+            self.move(-1 if key.name == "KEY_UP" else 1)
+        elif key.name in ("KEY_LEFT", "KEY_RIGHT"):
+            self.change(self.sel, -1 if key.name == "KEY_LEFT" else 1)
+        elif str(key) == "/":
+            self.searching, self.search_q = True, ""
+        elif str(key) == "!":
+            self.start_debug()
+        elif str(key).isdigit():
+            self._handle_digit(str(key))
+        elif str(key).lower() == "q":
+            return True
+        return False
+
+    def _handle_digit(self, digit):
+        kind = CONTROLS[self.sel]["type"]
+        if kind == "range":
+            self.entry, self.entry_buf = self.sel, digit
+        elif kind == "cycle":
+            self.pick_opt(self.sel, int(digit))
 
 
 def set_window_title(name="bebenqli"):
@@ -394,102 +523,8 @@ def main(ddc):  # pragma: no cover
     term = Terminal()
     ui   = UI(ddc)
 
-    def read(i):
-        ctrl = CONTROLS[i]
-        if ctrl["type"] in ("group", "section", "missing", "dead"):
-            return
-        if ctrl.get("noread"):                 # can't read back; seed a default,
-            with ui.lock:                      # trust local state thereafter
-                ui.vals[i]   = ctrl["opts"][0] if ctrl["type"] == "cycle" else ctrl.get("min", 0)
-                ui.loaded[i] = True
-            return
-        v = ddc.getvcp(ctrl["vcp"])
-        with ui.lock:
-            if v is None:
-                v = ctrl["opts"][0] if ctrl["type"] == "cycle" else ctrl.get("min", 0)
-            elif ctrl["type"] == "range":
-                v = max(ctrl["min"], min(ctrl["max"], v))
-            elif ctrl["type"] == "cycle" and v not in ctrl["opts"]:
-                v = ctrl["opts"][0]
-            ui.vals[i]   = v
-            ui.loaded[i] = True
-
-    threads = [threading.Thread(target=read, args=(i,), daemon=True)
-               for i in range(len(CONTROLS))]
-    for t in threads:
-        t.start()
+    for i in range(len(CONTROLS)):          # read every control in parallel
+        threading.Thread(target=ui.seed, args=(i,), daemon=True).start()
 
     with term.fullscreen(), term.cbreak(), term.hidden_cursor():
-        ui.draw(term)
-        while True:
-            with ui.lock:
-                any_anim = any(
-                    not ui.loaded[i] or ui.pending[i] is not None
-                    for i in INTERACT if CONTROLS[i]["type"] not in ("missing",)
-                )
-            key = term.inkey(timeout=0.25 if (any_anim or ui.debug is not None) else None)
-
-            if ui.debug is not None:
-                if (str(key) == "!" or key.name == "KEY_ESCAPE"
-                        or str(key).lower() == "q"):
-                    ui.stop_debug()
-                ui.draw_debug(term) if ui.debug is not None else ui.draw(term)
-                continue
-
-            if ui.entry is not None:
-                if key.name == "KEY_ENTER" or str(key) in ("\n", "\r"):
-                    ui.commit_entry()
-                elif key.name == "KEY_ESCAPE":
-                    ui.entry, ui.entry_buf = None, ""
-                elif key.name in ("KEY_BACKSPACE", "KEY_DELETE"):
-                    ui.entry_buf = ui.entry_buf[:-1]
-                    if not ui.entry_buf:
-                        ui.entry = None
-                elif str(key).isdigit():
-                    ui.entry_buf += str(key)
-                ui.draw(term)
-                continue
-
-            if ui.searching:
-                if key.name == "KEY_ESCAPE" or str(key) in ("\n", "\r"):
-                    ui.searching = False
-                elif key.name == "KEY_UP":
-                    ui.move(-1)
-                elif key.name == "KEY_DOWN":
-                    ui.move(1)
-                elif key.name in ("KEY_BACKSPACE", "KEY_DELETE"):
-                    ui.search_q = ui.search_q[:-1]
-                elif not key.is_sequence and str(key).isprintable():
-                    ui.search_q += str(key)
-                    # auto-jump to first match when query changes
-                    pool = ui._filtered()
-                    if pool and ui.sel not in pool:
-                        ui.sel = pool[0]
-            else:
-                if key.name == "KEY_UP":
-                    ui.move(-1)
-                elif key.name == "KEY_DOWN":
-                    ui.move(1)
-                elif key.name == "KEY_LEFT":
-                    ui.change(ui.sel, -1)
-                elif key.name == "KEY_RIGHT":
-                    ui.change(ui.sel, 1)
-                elif str(key) == "/":
-                    ui.searching = True
-                    ui.search_q  = ""
-                elif str(key) == "!":
-                    ui.start_debug()
-                elif str(key).isdigit() and CONTROLS[ui.sel]["type"] == "range":
-                    ui.entry     = ui.sel
-                    ui.entry_buf = str(key)
-                elif str(key).isdigit() and CONTROLS[ui.sel]["type"] == "cycle":
-                    ui.pick_opt(ui.sel, int(str(key)))
-                elif str(key).lower() == "q":
-                    break
-
-            with ui.lock:
-                for i in range(len(CONTROLS)):
-                    if ui.pending[i] is not None:
-                        ui.ticks[i] += 1
-
-            ui.draw(term)
+        ui.run_loop(term)

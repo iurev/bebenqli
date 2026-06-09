@@ -141,14 +141,21 @@ other sub-features are write-only. On/off is a separate register (`d7`).
 
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev]"     # blessed + pytest + pytest-cov
+pip install -e ".[dev]"     # blessed + pytest + pytest-cov + flake8/pylint
 pytest                       # runs the suite under a 100% coverage gate
+flake8 bebenqli/             # readability gate: cognitive complexity ≤ 15
 ```
 
 The monitor (and `tmux`) are faked behind a single `run_proc` seam, so the
 whole suite runs with no hardware and no `ddcutil` installed. The TUI layer is
 excluded from the coverage target (smoke-tested only); CLI and helpers are
 covered 100%.
+
+The code is split into small single-purpose modules — `proc` (the shell-out
+seam), `controls` (the control table), `format` (value→string), `ddc` (the
+`Ddc` monitor connection), `cli`, `tui`, and `app` (entry/dispatch); `__init__`
+is a thin facade. A `flake8-cognitive-complexity` gate keeps every function at
+or below a cognitive-complexity of 15, so nesting stays shallow and readable.
 
 ## License
 
