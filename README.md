@@ -137,6 +137,19 @@ other sub-features are write-only. On/off is a separate register (`d7`).
 - Mute (`8d`) is unreliable on this firmware; use Volume=0.
 - Minimally maintained — issues/PRs welcome but responses may be slow.
 
+## Development
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"     # blessed + pytest + pytest-cov
+pytest                       # runs the suite under a 100% coverage gate
+```
+
+The monitor (and `tmux`) are faked behind a single `run_proc` seam, so the
+whole suite runs with no hardware and no `ddcutil` installed. The TUI layer is
+excluded from the coverage target (smoke-tested only); CLI and helpers are
+covered 100%.
+
 ## License
 
 [MIT](LICENSE) © Vitalii Iurev

@@ -20,6 +20,12 @@ CMD     = None              # ddcutil base command, built once bus is known
 VERBOSE = False             # CLI -v: echo each ddcutil command to stderr
 
 
+def run_proc(cmd, text=False):
+    # Single seam for every external command (ddcutil, tmux). Tests replace
+    # this to fake the monitor without touching real hardware.
+    return subprocess.run(cmd, capture_output=True, text=text)  # pragma: no cover
+
+
 def build_cmd(bus):
     return ["ddcutil", "--bus", str(bus), "--permit-unknown-feature"]
 
@@ -29,8 +35,7 @@ def detect_bus(model=MODEL):
     # string contains `model`. The bus is assigned by the kernel per GPU+port,
     # so it differs on every machine — never hardcode it.
     try:
-        out = subprocess.run(["ddcutil", "detect"], capture_output=True,
-                             text=True).stdout
+        out = run_proc(["ddcutil", "detect"], text=True).stdout
     except FileNotFoundError:
         return None
     bus = None
@@ -176,7 +181,7 @@ def setvcp(code, value, chan=None, noverify=False):
     cmd = CMD + extra + ["setvcp", code, str(value)]
     if VERBOSE:
         print("$ " + " ".join(cmd), file=sys.stderr)
-    r = subprocess.run(cmd, capture_output=True)
+    r = run_proc(cmd)
     return r.returncode == 0   # True = ddcutil accepted the write
 
 
@@ -184,7 +189,7 @@ def getvcp(code):
     cmd = CMD + ["getvcp", code]
     if VERBOSE:
         print("$ " + " ".join(cmd), file=sys.stderr)
-    r = subprocess.run(cmd, capture_output=True, text=True)
+    r = run_proc(cmd, text=True)
     out = r.stdout
     m = re.search(r"current value\s*=\s*(\d+)", out)
     if m: return int(m.group(1))
@@ -235,7 +240,7 @@ def render_row(ctrl, val, loaded, pending, blink_on, entry=None):
         return f"    {label}  {'':12}  {'':7}" if blank else f"    {label}  {b}  {vs:>7}"
 
 
-class UI:
+class UI:  # pragma: no cover
     def __init__(self):
         n = len(CONTROLS)
         self.vals      = [0] * n
@@ -727,7 +732,7 @@ def set_window_title(name="bebenqli"):
     # on modern tmux. Renaming via the command DOES turn automatic-rename off
     # for the window, so it sticks. OSC 2 covers plain terminals.
     if os.environ.get("TMUX"):
-        subprocess.run(["tmux", "rename-window", name], capture_output=True)
+        run_proc(["tmux", "rename-window", name])
     sys.stdout.write(f"\033]2;{name}\007")
     sys.stdout.flush()
 
@@ -735,11 +740,10 @@ def set_window_title(name="bebenqli"):
 def restore_window_title():
     # Hand the window name back to tmux so it tracks the shell again on exit.
     if os.environ.get("TMUX"):
-        subprocess.run(["tmux", "set-window-option", "automatic-rename", "on"],
-                       capture_output=True)
+        run_proc(["tmux", "set-window-option", "automatic-rename", "on"])
 
 
-def main():
+def main():  # pragma: no cover
     set_window_title()
     atexit.register(restore_window_title)   # revert name on quit / Ctrl-C
     term = Terminal()
@@ -846,9 +850,9 @@ def main():
             ui.draw(term)
 
 
-def run():
+def run(argv=None):
     global BUS, CMD
-    args = sys.argv[1:]
+    args = list(sys.argv[1:] if argv is None else argv)
 
     if any(a in ("-V", "--version") for a in args):
         print(f"bebenqli {__version__}")
