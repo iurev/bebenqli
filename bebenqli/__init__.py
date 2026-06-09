@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import subprocess
 import os
 import re
 import sys
@@ -11,6 +10,7 @@ from blessed import Terminal
 from .controls import (CONTROLS, W, HEADERS, NONSEL, HIDDEN, INTERACT, RENDER,
                        SCAN_CODES, NOISE, MAPPED, slug, _renderable, _cli_name)
 from .format import bar, render_row, _fmt
+from .proc import run_proc
 
 __version__ = "0.0.1"
 
@@ -18,12 +18,6 @@ MODEL   = "RD280U"          # auto-detect: i2c bus whose monitor matches this
 BUS     = None              # resolved at startup (--bus / $BEBENQLI_BUS / detect)
 CMD     = None              # ddcutil base command, built once bus is known
 VERBOSE = False             # CLI -v: echo each ddcutil command to stderr
-
-
-def run_proc(cmd, text=False):
-    # Single seam for every external command (ddcutil, tmux). Tests replace
-    # this to fake the monitor without touching real hardware.
-    return subprocess.run(cmd, capture_output=True, text=text)  # pragma: no cover
 
 
 def build_cmd(bus):
