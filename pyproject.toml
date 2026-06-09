@@ -32,7 +32,7 @@ Issues = "https://github.com/iurev/bebenqli/issues"
 bebenqli = "bebenqli:run"
 
 [tool.setuptools]
-py-modules = ["bebenqli"]
+packages = ["bebenqli"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
