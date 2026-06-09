@@ -46,7 +46,7 @@ def test_run_bus_flag_without_value(mon, monkeypatch):
     # trailing "--bus" with no value -> explicit None -> falls back to detect
     monkeypatch.delenv("BEBENQLI_BUS", raising=False)
     called = {}
-    monkeypatch.setattr(b, "main", lambda ddc: called.update(hit=True, ddc=ddc))
+    monkeypatch.setattr(b.tui, "main", lambda ddc: called.update(hit=True, ddc=ddc))
     assert b.run(["--bus"]) == 0
     assert called["hit"] and called["ddc"].bus == "7"
 
@@ -60,7 +60,7 @@ def test_run_no_monitor_found(mon, monkeypatch, capsys):
 
 def test_run_no_args_launches_tui(mon, monkeypatch):
     called = {}
-    monkeypatch.setattr(b, "main", lambda ddc: called.update(hit=True, ddc=ddc))
+    monkeypatch.setattr(b.tui, "main", lambda ddc: called.update(hit=True, ddc=ddc))
     assert b.run([]) == 0
     assert called.get("hit") is True
     assert called["ddc"].cmd == b.build_cmd("7")
