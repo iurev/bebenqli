@@ -1,14 +1,10 @@
-<img src="assets/logo.svg" align="left" width="116" hspace="20" vspace="4" alt="bebenqli logo">
+<img src="assets/logo.svg" align="left" width="108" hspace="18" alt="bebenqli logo">
 
-# bebenqli
+### bebenqli
 
-A terminal UI **and** CLI to control **BenQ RD280U** monitors over DDC/CI —
-brightness, color mode, volume, the Moon Halo backlight, eye-care modes, and a
-pile of undocumented BenQ-specific features, all without touching the on-screen
-menu or BenQ's official app.
-
-Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.2** — expect
-rough edges.
+**Control your BenQ RD280U from the terminal** — a TUI **and** CLI over DDC/CI:
+brightness, color mode, volume, the **Moon Halo** backlight, eye-care modes, and
+a pile of undocumented BenQ features, without the OSD or BenQ's official app.
 
 <br clear="left">
 
@@ -17,6 +13,9 @@ rough edges.
 [![cognitive complexity ≤15](https://img.shields.io/badge/cognitive%20complexity-%E2%89%A415-blue)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
 [![python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.2** — expect
+rough edges.
 
 ![bebenqli TUI](https://github.com/user-attachments/assets/74a4b32b-ff1a-4ccf-a0cb-66d1e9b2fc47)
 
