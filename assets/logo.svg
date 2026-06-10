@@ -1,16 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="bebenqli logo">
-  <!-- bebenqli: solid crescent moon (Moon Halo) + ">_" CLI prompt -->
+  <!-- bebenqli: BenQ-purple tile, crescent moon (Moon Halo) + ">_" CLI prompt -->
+  <rect width="256" height="256" rx="52" fill="#6E2585"/>
+  <rect x="7" y="7" width="242" height="242" rx="46" fill="none" stroke="#C26BE0" stroke-width="3" opacity="0.45"/>
+  <!-- crescent moon (cream) -->
   <mask id="moon">
     <rect width="256" height="256" fill="#000"/>
-    <circle cx="176" cy="84" r="58" fill="#fff"/>
-    <circle cx="146" cy="68" r="52" fill="#000"/>
+    <circle cx="176" cy="86" r="54" fill="#fff"/>
+    <circle cx="148" cy="72" r="48" fill="#000"/>
   </mask>
-  <rect width="256" height="256" fill="#6E2585" mask="url(#moon)"/>
+  <rect width="256" height="256" fill="#F2E8F8" mask="url(#moon)"/>
   <!-- stars -->
-  <circle cx="120" cy="44" r="4" fill="#C26BE0"/>
-  <circle cx="214" cy="150" r="3" fill="#C26BE0"/>
+  <circle cx="120" cy="52" r="4" fill="#F2E8F8" opacity="0.9"/>
+  <circle cx="210" cy="150" r="3" fill="#F2E8F8" opacity="0.8"/>
   <!-- ">_" prompt -->
-  <path d="M48 158 L80 186 L48 214" fill="none" stroke="#6E2585"
-        stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="96" y="204" width="40" height="15" rx="7.5" fill="#9B4DCA"/>
+  <path d="M52 162 L82 188 L52 214" fill="none" stroke="#F2E8F8"
+        stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="96" y="204" width="38" height="14" rx="7" fill="#C9A6DA"/>
 </svg>

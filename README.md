@@ -1,14 +1,6 @@
-<p align="center">
-  <img src="assets/logo.svg" width="116" alt="bebenqli logo">
-</p>
+<img src="assets/logo.svg" align="left" width="116" hspace="20" vspace="4" alt="bebenqli logo">
 
 # bebenqli
-
-[![tests](https://github.com/iurev/bebenqli/actions/workflows/test.yml/badge.svg)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
-[![coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
-[![cognitive complexity ≤15](https://img.shields.io/badge/cognitive%20complexity-%E2%89%A415-blue)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
-[![python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
-[![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 A terminal UI **and** CLI to control **BenQ RD280U** monitors over DDC/CI —
 brightness, color mode, volume, the Moon Halo backlight, eye-care modes, and a
@@ -17,6 +9,14 @@ menu or BenQ's official app.
 
 Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.2** — expect
 rough edges.
+
+<br clear="left">
+
+[![tests](https://github.com/iurev/bebenqli/actions/workflows/test.yml/badge.svg)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
+[![coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
+[![cognitive complexity ≤15](https://img.shields.io/badge/cognitive%20complexity-%E2%89%A415-blue)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
+[![python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
+[![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ![bebenqli TUI](https://github.com/user-attachments/assets/74a4b32b-ff1a-4ccf-a0cb-66d1e9b2fc47)
 
