@@ -6,3 +6,6 @@ dist/
 .venv/
 venv/
 /tmp/benq/
+.coverage
+.pytest_cache/
+htmlcov/

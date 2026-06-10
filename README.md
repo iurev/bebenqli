@@ -1,11 +1,17 @@
 # bebenqli
 
+[![tests](https://github.com/iurev/bebenqli/actions/workflows/test.yml/badge.svg)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
+[![coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
+[![cognitive complexity ≤15](https://img.shields.io/badge/cognitive%20complexity-%E2%89%A415-blue)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
+[![python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
+[![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A terminal UI **and** CLI to control **BenQ RD280U** monitors over DDC/CI —
 brightness, color mode, volume, the Moon Halo backlight, eye-care modes, and a
 pile of undocumented BenQ-specific features, all without touching the on-screen
 menu or BenQ's official app.
 
-Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.1** — expect
+Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.2** — expect
 rough edges.
 
 ![bebenqli TUI](https://github.com/user-attachments/assets/74a4b32b-ff1a-4ccf-a0cb-66d1e9b2fc47)
@@ -40,13 +46,13 @@ while you change settings on the monitor, to map new ones.
 pipx install git+https://github.com/iurev/bebenqli
 ```
 
-**Raw script** (no packaging, just run it):
+**From a clone** (no install, just run the package):
 
 ```bash
 git clone https://github.com/iurev/bebenqli
 cd bebenqli
 pip install blessed          # only dependency
-./bebenqli.py
+python -m bebenqli
 ```
 
 `ddcutil` itself is a *system* package — install it from your distro
@@ -136,6 +142,26 @@ other sub-features are write-only. On/off is a separate register (`d7`).
 - Several codes are write-only (can't be read back to verify state).
 - Mute (`8d`) is unreliable on this firmware; use Volume=0.
 - Minimally maintained — issues/PRs welcome but responses may be slow.
+
+## Development
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"     # blessed + pytest + pytest-cov + flake8/pylint
+pytest                       # runs the suite under a 100% coverage gate
+flake8 bebenqli/             # readability gate: cognitive complexity ≤ 15
+```
+
+The monitor (and `tmux`) are faked behind a single `run_proc` seam, so the
+whole suite runs with no hardware and no `ddcutil` installed. The TUI layer is
+excluded from the coverage target (smoke-tested only); CLI and helpers are
+covered 100%.
+
+The code is split into small single-purpose modules — `proc` (the shell-out
+seam), `controls` (the control table), `format` (value→string), `ddc` (the
+`Ddc` monitor connection), `cli`, `tui`, and `app` (entry/dispatch); `__init__`
+is a thin facade. A `flake8-cognitive-complexity` gate keeps every function at
+or below a cognitive-complexity of 15, so nesting stays shallow and readable.
 
 ## License
 

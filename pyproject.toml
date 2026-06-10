@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bebenqli"
-version = "0.0.1"
+dynamic = ["version"]
 description = "TUI + CLI to control BenQ RD280U monitors over DDC/CI (ddcutil)"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -19,7 +19,11 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Utilities",
 ]
-dependencies = ["blessed>=1.19"]
+dependencies = ["blessed>=1.19", "pyyaml>=6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "pytest-cov>=4",
+       "flake8>=7", "flake8-cognitive-complexity>=0.1", "pylint>=3"]
 
 [project.urls]
 Homepage = "https://github.com/iurev/bebenqli"
@@ -28,5 +32,22 @@ Issues = "https://github.com/iurev/bebenqli/issues"
 [project.scripts]
 bebenqli = "bebenqli:run"
 
-[tool.setuptools]
-py-modules = ["bebenqli"]
+[tool.setuptools.dynamic]
+version = { attr = "bebenqli._version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["bebenqli*"]      # bebenqli + bebenqli.tui
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=bebenqli --cov-branch --cov-report=term-missing --cov-fail-under=100"
+
+[tool.coverage.run]
+source = ["bebenqli"]
+omit = ["bebenqli/__main__.py"]   # trivial `python -m` entry shim
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+]
