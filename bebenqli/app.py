@@ -10,7 +10,7 @@ from .ddc import Ddc, resolve_bus, MODEL
 
 try:
     __version__ = version("bebenqli")        # single source of truth: pyproject
-except PackageNotFoundError:                  # running from a source tree, no install
+except PackageNotFoundError:                  # pragma: no cover — source tree, no install
     __version__ = "0.0.0+source"
 
 
