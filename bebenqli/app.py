@@ -1,5 +1,6 @@
 """The front door: parse --bus / -V, build the one Ddc, and dispatch to the CLI
 or the TUI. Calls tui.main by attribute so tests can patch it."""
+import argparse
 import sys
 
 from . import tui
@@ -9,32 +10,25 @@ from .ddc import Ddc, resolve_bus, MODEL
 __version__ = "0.0.1"
 
 
-def run(argv=None):
-    args = list(sys.argv[1:] if argv is None else argv)
+def _parse(argv):
+    # Pull out our two top-level flags; everything else (the subcommand and its
+    # args) flows through untouched to cli(). add_help=False keeps -h/--help for
+    # cli's own usage. --bus accepts "--bus N", "--bus=N", or bare "--bus"
+    # (no value -> fall back to auto-detect); last one wins.
+    p = argparse.ArgumentParser(prog="bebenqli", add_help=False)
+    p.add_argument("-V", "--version", action="store_true")
+    p.add_argument("--bus", nargs="?", const=None, default=None)
+    return p.parse_known_args(argv)
 
-    if any(a in ("-V", "--version") for a in args):
+
+def run(argv=None):
+    ns, rest = _parse(sys.argv[1:] if argv is None else argv)
+
+    if ns.version:
         print(f"bebenqli {__version__}")
         return 0
 
-    # --bus N (or --bus=N): override auto-detection.
-    explicit = None
-    rest = []
-    i = 0
-    while i < len(args):
-        a = args[i]
-        if a == "--bus":
-            explicit = args[i + 1] if i + 1 < len(args) else None
-            i += 2
-            continue
-        if a.startswith("--bus="):
-            explicit = a.split("=", 1)[1]
-            i += 1
-            continue
-        rest.append(a)
-        i += 1
-    args = rest
-
-    bus = resolve_bus(explicit)
+    bus = resolve_bus(ns.bus)
     if bus is None:
         print(f"error: no monitor matching '{MODEL}' found.\n"
               f"check `ddcutil detect`, then pass --bus N or set $BEBENQLI_BUS.",
@@ -42,8 +36,8 @@ def run(argv=None):
         return 1
     ddc = Ddc(bus)
 
-    if args:
-        return cli(ddc, args)
+    if rest:
+        return cli(ddc, rest)
     tui.main(ddc)
     return 0
 
