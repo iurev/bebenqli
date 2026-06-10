@@ -1,27 +1,17 @@
-"""Interactive blessed TUI: the settings screen plus its writer/poll/listen
-threads, and the tmux/OSC window-title helpers. Excluded from coverage (can't
-drive a real terminal in CI)."""
+"""Interactive blessed TUI: the settings screen, its write/poll worker threads,
+and the key-driven event loop. The `!` probe tool lives in debug.py, the
+window-title helpers in term.py. Excluded from coverage (can't drive a real
+terminal in CI)."""
 import atexit
-import os
-import sys
 import threading
 import time
-from pathlib import Path
 
-import yaml
 from blessed import Terminal
 
-from . import proc
-from .controls import CONTROLS, HEADERS, INTERACT, RENDER, W, SCAN_CODES, slug
+from .controls import CONTROLS, HEADERS, INTERACT, RENDER, W
+from .debug import Prober
 from .format import render_row
-
-
-def _dump_yaml(label, doc):  # pragma: no cover
-    # Write a probe log to /tmp/benq/<label>.yaml (insertion order preserved).
-    out = Path("/tmp/benq")
-    out.mkdir(parents=True, exist_ok=True)
-    (out / f"{slug(label)}.yaml").write_text(
-        yaml.safe_dump(doc, sort_keys=False, allow_unicode=True))
+from .term import set_window_title, restore_window_title
 
 
 class UI:  # pragma: no cover
@@ -38,15 +28,7 @@ class UI:  # pragma: no cover
         self.sel       = INTERACT[0]
         self.searching = False
         self.search_q  = ""
-        self.debug     = None    # idx being listened to, or None
-        self.dbg_mode  = None    # "single" (known vcp) | "discover" (unmapped)
-        self.dbg_vals  = []      # single: ordered unique observed values
-        self.dbg_seen  = set()
-        self.dbg_base  = {}      # discover: code -> baseline value
-        self.dbg_trail = {}      # discover: code -> [v0, v1, ...] distinct seq
-        self.dbg_live  = []      # discover: codes alive after baseline prune
-        self.dbg_phase = ""      # discover: "baseline" | "watching"
-        self.dbg_prog  = (0, 0)  # discover: (done, total) during baseline
+        self.prober    = Prober(ddc)   # the ! probe/discover tool (own state)
         self.entry     = None    # idx in number-entry mode, or None
         self.entry_buf = ""
         threading.Thread(target=self._writer, daemon=True).start()
@@ -131,190 +113,6 @@ class UI:  # pragma: no cover
             self.pending[idx] = v
             self.dirty.add(idx)
             self.cv.notify()
-
-    # ── Listen / debug mode ────────────────────────────────────────────────
-    def start_debug(self):
-        idx  = self.sel
-        ctrl = CONTROLS[idx]
-        if "vcp" in ctrl:                              # known code: watch it
-            with self.lock:
-                self.debug    = idx
-                self.dbg_mode = "single"
-                self.dbg_vals = []
-                self.dbg_seen = set()
-            threading.Thread(target=self._listen, args=(idx,), daemon=True).start()
-        elif ctrl["type"] == "missing":                # unknown: discover code
-            with self.lock:
-                self.debug    = idx
-                self.dbg_mode = "discover"
-                self.dbg_base = {}
-                self.dbg_trail = {}
-                self.dbg_live = []
-                self.dbg_phase = "baseline"
-                self.dbg_prog = (0, len(SCAN_CODES))
-            threading.Thread(target=self._discover, args=(idx,), daemon=True).start()
-
-    def stop_debug(self):
-        with self.lock:
-            idx  = self.debug
-            mode = self.dbg_mode
-            vals = list(self.dbg_vals)
-            trail = dict(self.dbg_trail)
-            self.debug = None
-        if idx is None:
-            return
-        if mode == "single":
-            self._write_yaml(idx, vals)               # final flush
-        else:
-            self._write_discover_yaml(idx, trail)
-
-    # ── Discovery: poll all candidate codes, find which one moves ───────────
-    def _discover(self, idx):
-        base = self._discover_baseline(idx)
-        if base is not None:                       # None = stopped mid-baseline
-            self._discover_watch(idx, base)
-
-    def _discover_baseline(self, idx):
-        # Read every candidate once; keep the codes that answer. Returns the
-        # baseline {code: value}, or None if the user stopped during the sweep.
-        base = {}
-        for n, code in enumerate(SCAN_CODES, 1):
-            with self.lock:
-                if self.debug != idx:
-                    return None
-                self.dbg_prog = (n, len(SCAN_CODES))
-            v = self.ddc.getvcp(code)
-            if v is not None:
-                base[code] = v
-        with self.lock:
-            if self.debug != idx:
-                return None
-            self.dbg_base  = dict(base)
-            self.dbg_live  = list(base)
-            self.dbg_phase = "watching"
-        return base
-
-    def _discover_watch(self, idx, base):
-        # Sweep the live codes forever, appending distinct new values per code.
-        last = dict(base)
-        while True:
-            changed = False
-            for code in base:
-                with self.lock:
-                    if self.debug != idx:
-                        return
-                v = self.ddc.getvcp(code)
-                if v is None or v == last[code]:
-                    continue
-                last[code] = v
-                if self._record_step(idx, code, base[code], v):
-                    changed = True
-            if changed:
-                with self.lock:
-                    snap = {c: list(t) for c, t in self.dbg_trail.items()}
-                self._write_discover_yaml(idx, snap)
-            time.sleep(0.05)
-
-    def _record_step(self, idx, code, baseline, v):
-        # Append v to the code's trail if it differs from the last entry.
-        with self.lock:
-            if self.debug != idx:
-                return False
-            trail = self.dbg_trail.setdefault(code, [baseline])
-            if v != trail[-1]:
-                trail.append(v)
-                return True
-        return False
-
-    def _write_discover_yaml(self, idx, trail):
-        ctrl = CONTROLS[idx]
-        # Most-changed first — the code that moved most while you wiggled.
-        ordered = sorted(trail.items(), key=lambda kv: -len(kv[1]))
-        doc = {
-            "label": ctrl["label"],
-            "type": "discover",
-            "scanned": len(SCAN_CODES),
-            "candidates": [
-                {"vcp": code,
-                 "steps": len(vals),
-                 "observed": list(vals),
-                 "observed_hex": [f"0x{v:02x}" for v in vals]}
-                for code, vals in ordered
-            ],
-        }
-        _dump_yaml(ctrl["label"], doc)
-
-    def _listen(self, idx):
-        vcp = CONTROLS[idx]["vcp"]
-        while True:
-            with self.lock:
-                if self.debug != idx:
-                    return
-            v = self.ddc.getvcp(vcp)
-            if v is not None:
-                with self.lock:
-                    if self.debug != idx:
-                        return
-                    new = v not in self.dbg_seen
-                    if new:
-                        self.dbg_seen.add(v)
-                        self.dbg_vals.append(v)
-                        snapshot = list(self.dbg_vals)
-                if new:
-                    self._write_yaml(idx, snapshot)
-            time.sleep(0.25)
-
-    def _write_yaml(self, idx, vals):
-        ctrl = CONTROLS[idx]
-        doc = {"label": ctrl["label"], "vcp": ctrl["vcp"], "type": ctrl["type"]}
-        if ctrl["type"] == "range":
-            doc["min"], doc["max"] = ctrl["min"], ctrl["max"]
-        elif ctrl["type"] == "cycle":
-            doc["current_opts"]  = [hex(o) for o in ctrl["opts"]]
-            doc["current_names"] = list(ctrl["names"])
-        doc["count"]    = len(vals)
-        doc["observed"] = [{"dec": v, "hex": f"0x{v:02x}"} for v in vals]
-        _dump_yaml(ctrl["label"], doc)
-
-    def draw_debug(self, term):
-        with self.lock:
-            idx   = self.debug
-            mode  = self.dbg_mode
-            vals  = list(self.dbg_vals)
-            trail = {c: list(t) for c, t in self.dbg_trail.items()}
-            phase = self.dbg_phase
-            prog  = self.dbg_prog
-            nlive = len(self.dbg_live)
-        if idx is None:
-            return
-        ctrl = CONTROLS[idx]
-        path = f"/tmp/benq/{slug(ctrl['label'])}.yaml"
-
-        if mode == "single":
-            lines = [
-                f"LISTEN  {ctrl['label']}  vcp={ctrl['vcp']}  ({len(vals)} unique)",
-                f"change value via monitor OSD · ! / q / ESC to stop · {path}",
-                "",
-            ]
-            for v in vals:
-                lines.append(f"{v}\t(0x{v:02x})")
-        else:
-            if phase == "baseline":
-                head = f"DISCOVER  {ctrl['label']}   baseline {prog[0]}/{prog[1]}…"
-            else:
-                head = f"DISCOVER  {ctrl['label']}   watching · {nlive} live codes"
-            lines = [
-                head,
-                f"wiggle setting on monitor OSD · q / ESC to stop · {path}",
-                "",
-            ]
-            ordered = sorted(trail.items(), key=lambda kv: -len(kv[1]))
-            if not ordered:
-                lines.append("(no code moved yet — change it on the monitor)")
-            for code, vs in ordered:
-                seq = " → ".join(str(v) for v in vs)
-                lines.append(f"{code}   {seq}   ({len(vs)})")
-        print(term.home + term.clear + "\n".join(lines), end="", flush=True)
 
     def _poll(self, idx, target):
         deadline = time.time() + 8.0
@@ -410,12 +208,12 @@ class UI:  # pragma: no cover
         return v
 
     def _timeout(self):
-        # Poll fast while anything is animating (unloaded / pending) or in debug;
+        # Poll fast while anything is animating (unloaded / pending) or probing;
         # otherwise block until the next key.
         with self.lock:
             animating = any(not self.loaded[i] or self.pending[i] is not None
                             for i in INTERACT if CONTROLS[i]["type"] != "missing")
-        return 0.25 if (animating or self.debug is not None) else None
+        return 0.25 if (animating or self.prober.active) else None
 
     def _tick(self):
         with self.lock:
@@ -427,7 +225,7 @@ class UI:  # pragma: no cover
         self.draw(term)
         while True:
             key = term.inkey(timeout=self._timeout())
-            if self.debug is not None:
+            if self.prober.active:
                 self._handle_debug(term, key)
                 continue
             if self.entry is not None:
@@ -443,8 +241,11 @@ class UI:  # pragma: no cover
 
     def _handle_debug(self, term, key):
         if str(key) == "!" or key.name == "KEY_ESCAPE" or str(key).lower() == "q":
-            self.stop_debug()
-        self.draw_debug(term) if self.debug is not None else self.draw(term)
+            self.prober.stop()
+        if self.prober.active:
+            self.prober.draw(term)
+        else:
+            self.draw(term)
 
     def _handle_entry(self, key):
         if key.name == "KEY_ENTER" or str(key) in ("\n", "\r"):
@@ -483,7 +284,7 @@ class UI:  # pragma: no cover
         elif str(key) == "/":
             self.searching, self.search_q = True, ""
         elif str(key) == "!":
-            self.start_debug()
+            self.prober.start(self.sel)
         elif str(key).isdigit():
             self._handle_digit(str(key))
         elif str(key).lower() == "q":
@@ -496,23 +297,6 @@ class UI:  # pragma: no cover
             self.entry, self.entry_buf = self.sel, digit
         elif kind == "cycle":
             self.pick_opt(self.sel, int(digit))
-
-
-def set_window_title(name="bebenqli"):
-    # tmux re-derives a window's name from its running process (so a long-lived
-    # python3 just shows "python3"), and the \ek escape no longer disables that
-    # on modern tmux. Renaming via the command DOES turn automatic-rename off
-    # for the window, so it sticks. OSC 2 covers plain terminals.
-    if os.environ.get("TMUX"):
-        proc.run_proc(["tmux", "rename-window", name])
-    sys.stdout.write(f"\033]2;{name}\007")
-    sys.stdout.flush()
-
-
-def restore_window_title():
-    # Hand the window name back to tmux so it tracks the shell again on exit.
-    if os.environ.get("TMUX"):
-        proc.run_proc(["tmux", "set-window-option", "automatic-rename", "on"])
 
 
 def main(ddc):  # pragma: no cover

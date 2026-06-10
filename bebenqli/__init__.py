@@ -9,5 +9,6 @@ from .controls import (CONTROLS, W, HEADERS, NONSEL, HIDDEN, INTERACT, RENDER,  
 from .format import bar, render_row, _fmt  # noqa: F401
 from .ddc import Ddc, build_cmd, detect_bus, resolve_bus, MODEL  # noqa: F401
 from .cli import cli, _read, _resolve, _cli_controls  # noqa: F401
-from .tui import UI, main, set_window_title, restore_window_title  # noqa: F401
+from .term import set_window_title, restore_window_title  # noqa: F401
+from .tui import UI, main  # noqa: F401
 from .app import run, __version__  # noqa: F401
