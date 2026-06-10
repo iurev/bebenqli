@@ -8,10 +8,10 @@ import time
 
 from blessed import Terminal
 
-from .controls import CONTROLS, HEADERS, INTERACT, RENDER, W
-from .debug import Prober
-from .format import render_row
-from .term import set_window_title, restore_window_title
+from ..controls import CONTROLS, HEADERS, INTERACT, RENDER, W
+from ..debug import Prober
+from ..format import render_row
+from ..term import set_window_title, restore_window_title
 
 
 class UI:  # pragma: no cover
