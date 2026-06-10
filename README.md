@@ -1,6 +1,8 @@
-<img src="assets/logo.svg" align="left" width="108" hspace="18" alt="bebenqli logo">
+# bebenqli
 
-### bebenqli
+<hr />
+
+<img src="assets/logo.svg" align="left" width="108" hspace="18" alt="bebenqli logo">
 
 **Control your BenQ RD280U from the terminal** — a TUI **and** CLI over DDC/CI:
 brightness, color mode, volume, the **Moon Halo** backlight, eye-care modes, and
