@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="bebenqli logo">
+  <!-- bebenqli: solid crescent moon (Moon Halo) + ">_" CLI prompt -->
+  <mask id="moon">
+    <rect width="256" height="256" fill="#000"/>
+    <circle cx="176" cy="84" r="58" fill="#fff"/>
+    <circle cx="146" cy="68" r="52" fill="#000"/>
+  </mask>
+  <rect width="256" height="256" fill="#6E2585" mask="url(#moon)"/>
+  <!-- stars -->
+  <circle cx="120" cy="44" r="4" fill="#C26BE0"/>
+  <circle cx="214" cy="150" r="3" fill="#C26BE0"/>
+  <!-- ">_" prompt -->
+  <path d="M48 158 L80 186 L48 214" fill="none" stroke="#6E2585"
+        stroke-width="17" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="96" y="204" width="40" height="15" rx="7.5" fill="#9B4DCA"/>
+</svg>

@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" width="116" alt="bebenqli logo">
+</p>
+
 # bebenqli
 
 [![tests](https://github.com/iurev/bebenqli/actions/workflows/test.yml/badge.svg)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
