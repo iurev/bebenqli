@@ -8,6 +8,8 @@ a pile of undocumented BenQ features, without the OSD or BenQ's official app.
 
 <br clear="left">
 
+<hr />
+
 [![tests](https://github.com/iurev/bebenqli/actions/workflows/test.yml/badge.svg)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
 [![coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
 [![cognitive complexity ≤15](https://img.shields.io/badge/cognitive%20complexity-%E2%89%A415-blue)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
