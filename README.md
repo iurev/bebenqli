@@ -1,15 +1,20 @@
 # bebenqli
 
+<img src="assets/logo.svg" align="left" width="108" hspace="18" alt="bebenqli logo">
+
+**Control your BenQ RD280U from the terminal** — a TUI **and** CLI over DDC/CI:
+brightness, color mode, volume, the **Moon Halo** backlight, eye-care modes, and
+a pile of undocumented BenQ features, without the OSD or BenQ's official app.
+
+<br clear="left">
+
+<hr />
+
 [![tests](https://github.com/iurev/bebenqli/actions/workflows/test.yml/badge.svg)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
 [![coverage 100%](https://img.shields.io/badge/coverage-100%25-brightgreen)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
 [![cognitive complexity ≤15](https://img.shields.io/badge/cognitive%20complexity-%E2%89%A415-blue)](https://github.com/iurev/bebenqli/actions/workflows/test.yml)
 [![python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-
-A terminal UI **and** CLI to control **BenQ RD280U** monitors over DDC/CI —
-brightness, color mode, volume, the Moon Halo backlight, eye-care modes, and a
-pile of undocumented BenQ-specific features, all without touching the on-screen
-menu or BenQ's official app.
 
 Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.2** — expect
 rough edges.
