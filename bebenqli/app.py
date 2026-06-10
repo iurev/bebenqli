@@ -2,16 +2,11 @@
 or the TUI. Calls tui.main by attribute so tests can patch it."""
 import argparse
 import sys
-from importlib.metadata import version, PackageNotFoundError
 
 from . import tui
+from ._version import __version__
 from .cli import cli
 from .ddc import Ddc, resolve_bus, MODEL
-
-try:
-    __version__ = version("bebenqli")        # single source of truth: pyproject
-except PackageNotFoundError:                  # pragma: no cover — source tree, no install
-    __version__ = "0.0.0+source"
 
 
 def _parse(argv):

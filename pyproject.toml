@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bebenqli"
-version = "0.0.1"
+dynamic = ["version"]
 description = "TUI + CLI to control BenQ RD280U monitors over DDC/CI (ddcutil)"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -32,8 +32,11 @@ Issues = "https://github.com/iurev/bebenqli/issues"
 [project.scripts]
 bebenqli = "bebenqli:run"
 
-[tool.setuptools]
-packages = ["bebenqli"]
+[tool.setuptools.dynamic]
+version = { attr = "bebenqli._version.__version__" }
+
+[tool.setuptools.packages.find]
+include = ["bebenqli*"]      # bebenqli + bebenqli.tui
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
