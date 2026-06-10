@@ -19,7 +19,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Utilities",
 ]
-dependencies = ["blessed>=1.19"]
+dependencies = ["blessed>=1.19", "pyyaml>=6"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "pytest-cov>=4",

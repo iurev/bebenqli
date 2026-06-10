@@ -6,12 +6,22 @@ import os
 import sys
 import threading
 import time
+from pathlib import Path
 
+import yaml
 from blessed import Terminal
 
 from . import proc
 from .controls import CONTROLS, HEADERS, INTERACT, RENDER, W, SCAN_CODES, slug
 from .format import render_row
+
+
+def _dump_yaml(label, doc):  # pragma: no cover
+    # Write a probe log to /tmp/benq/<label>.yaml (insertion order preserved).
+    out = Path("/tmp/benq")
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"{slug(label)}.yaml").write_text(
+        yaml.safe_dump(doc, sort_keys=False, allow_unicode=True))
 
 
 class UI:  # pragma: no cover
@@ -218,24 +228,21 @@ class UI:  # pragma: no cover
 
     def _write_discover_yaml(self, idx, trail):
         ctrl = CONTROLS[idx]
-        os.makedirs("/tmp/benq", exist_ok=True)
         # Most-changed first — the code that moved most while you wiggled.
         ordered = sorted(trail.items(), key=lambda kv: -len(kv[1]))
-        lines = [
-            f"label: {ctrl['label']}",
-            "type: discover",
-            f"scanned: {len(SCAN_CODES)}",
-            "candidates:",
-        ]
-        if not ordered:
-            lines.append("  []   # nothing moved — try widening to mapped codes")
-        for code, vals in ordered:
-            lines.append(f'  - vcp: "{code}"')
-            lines.append(f"    steps: {len(vals)}")
-            lines.append(f"    observed: [{', '.join(str(v) for v in vals)}]")
-            lines.append(f"    observed_hex: [{', '.join(f'0x{v:02x}' for v in vals)}]")
-        with open(f"/tmp/benq/{slug(ctrl['label'])}.yaml", "w") as f:
-            f.write("\n".join(lines) + "\n")
+        doc = {
+            "label": ctrl["label"],
+            "type": "discover",
+            "scanned": len(SCAN_CODES),
+            "candidates": [
+                {"vcp": code,
+                 "steps": len(vals),
+                 "observed": list(vals),
+                 "observed_hex": [f"0x{v:02x}" for v in vals]}
+                for code, vals in ordered
+            ],
+        }
+        _dump_yaml(ctrl["label"], doc)
 
     def _listen(self, idx):
         vcp = CONTROLS[idx]["vcp"]
@@ -259,24 +266,15 @@ class UI:  # pragma: no cover
 
     def _write_yaml(self, idx, vals):
         ctrl = CONTROLS[idx]
-        os.makedirs("/tmp/benq", exist_ok=True)
-        lines = [
-            f"label: {ctrl['label']}",
-            f'vcp: "{ctrl["vcp"]}"',
-            f"type: {ctrl['type']}",
-        ]
+        doc = {"label": ctrl["label"], "vcp": ctrl["vcp"], "type": ctrl["type"]}
         if ctrl["type"] == "range":
-            lines += [f"min: {ctrl['min']}", f"max: {ctrl['max']}"]
+            doc["min"], doc["max"] = ctrl["min"], ctrl["max"]
         elif ctrl["type"] == "cycle":
-            lines.append(f"current_opts: [{', '.join(hex(o) for o in ctrl['opts'])}]")
-            lines.append(f"current_names: [{', '.join(ctrl['names'])}]")
-        lines.append(f"count: {len(vals)}")
-        lines.append("observed:")
-        for v in vals:
-            lines.append(f"  - dec: {v}")
-            lines.append(f'    hex: "0x{v:02x}"')
-        with open(f"/tmp/benq/{slug(ctrl['label'])}.yaml", "w") as f:
-            f.write("\n".join(lines) + "\n")
+            doc["current_opts"]  = [hex(o) for o in ctrl["opts"]]
+            doc["current_names"] = list(ctrl["names"])
+        doc["count"]    = len(vals)
+        doc["observed"] = [{"dec": v, "hex": f"0x{v:02x}"} for v in vals]
+        _dump_yaml(ctrl["label"], doc)
 
     def draw_debug(self, term):
         with self.lock:
