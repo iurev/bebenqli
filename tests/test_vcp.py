@@ -43,6 +43,42 @@ def test_getvcp_skips_noise_lines_before_vcp(monkeypatch, ddc):
     assert ddc.getvcp("62") == 0x17
 
 
+# ── read_raw (cur, max) ──────────────────────────────────────────────────────
+@pytest.mark.parametrize("stdout,expected", [
+    ("VCP 10 C 42 100", (42, 100)),                 # continuous -> (cur, max)
+    ("VCP 60 SNC x11", (0x11, None)),               # simple NC -> no max
+    ("VCP 60 NC x11", (0x11, None)),                 # NC alias -> single byte, no max
+    ("VCP 62 CNC x00 x32 x00 x17", (0x17, 0x32)),   # complex NC -> (SL, ML=max)
+    ("VCP AB ERR", (None, None)),                    # unsupported
+    ("VCP 10 C xx 100", (None, None)),               # bad decimal
+    ("VCP 62 CNC x00 xzz x00 x17", (None, None)),    # bad max hex
+    ("VCP 10 T 0102", (None, None)),                  # table unsupported
+    ("nothing here", (None, None)),                   # no VCP line
+])
+def test_read_raw_parses(monkeypatch, ddc, stdout, expected):
+    _stub_stdout(monkeypatch, stdout)
+    assert ddc.read_raw("10") == expected
+
+
+def test_read_raw_uses_terse_flag(monkeypatch, ddc):
+    seen = {}
+
+    def fake(cmd, text=False):
+        seen["cmd"] = cmd
+        return types.SimpleNamespace(stdout="VCP 10 C 5 100", returncode=0, stderr="")
+
+    monkeypatch.setattr(b.proc, "run_proc", fake)
+    assert ddc.read_raw("10") == (5, 100)
+    assert "--terse" in seen["cmd"]
+
+
+def test_read_raw_verbose_echoes(mon, ddc, capsys):
+    mon.values["10"] = 5
+    ddc.verbose = True
+    ddc.read_raw("10")
+    assert "getvcp 10" in capsys.readouterr().err
+
+
 def test_getvcp_uses_terse_flag(monkeypatch, ddc):
     seen = {}
 

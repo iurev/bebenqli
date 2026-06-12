@@ -119,66 +119,107 @@ Wins:
 
 ---
 
-## Phase 2 — round-trip sweep (does set actually take?)
+## Phase 1 — DONE
 
-Per readable+settable control: read original -> for each candidate (cycle: every
-opt; range: min/max/few mids) set -> settle -> read back -> compare -> restore.
-Emit YAML report. Home = `debug.py` `Prober` (already writes `/tmp/benq/*.yaml`) or
-a `scripts/sweep_hw.py` gated out of CI.
-
-**`returncode==0 != applied.`** ddcutil reports success on the i2c ACK, not semantic
-acceptance. Read-back is the only truth. Corner cases that produce a "mismatch"
-which is NOT a bug:
-
-1. **Settle latency** — read too fast -> old value. Delay 100–500ms or read-until-stable.
-2. **Quantization / snap** — set 37, monitor snaps to step grid -> reads 35. Detect grid, allow tolerance.
-3. **Clamp** — set > max -> clamps. Expected.
-4. **Self-drift** — auto modes (BI Gen2 `e2=on`, ambient sensor `e5`) move brightness
-   on their own. Read twice 2s apart with no write; if it moved -> sensor-driven,
-   exclude from strict verify.
-5. **Flaky** — N reads of same set disagree -> mark `~`, don't fail.
-6. **DDC transient errors** — retry N, distinguish "DDC error" from "wrong value".
-7. **min/max truth** — `C` max from terse vs hardcoded `CONTROLS` range
-   (volume 0–50). Mismatch = doc bug, auto-flag.
-
-Output regenerates the README status column (✓/~/?) **from real evidence**, not memory.
+Shipped in v0.0.3: `Ddc.getvcp` parses `ddcutil --terse` via pure `_parse_terse`.
+Trustworthy read oracle, 100% covered, verified live on the RD280U.
 
 ---
 
-## Phase 3 — cross-coupling detection (the night-mode worry)
+## Phase 2 — interactive probe console (`idebug`)
 
-Likely edges on RD280U:
+Replaces the originally-planned batch sweep, and **absorbs Phase 3** (coupling).
+A non-batch, human-in-the-loop REPL is the only thing that gives a *real* oracle:
+a software-only round-trip (`set`->`getvcp`) just proves "the register stores what
+I wrote" — it can't prove the code maps to the labelled feature, nor that anything
+visibly happened. The human + the monitor's own OSD break that circularity.
 
-- **Color mode (`dc`) resets brightness/contrast/color-preset** to that mode's
-  defaults. Set brightness=80, then color-mode=cinema -> brightness silently jumps.
-  Stored 80 is now a lie.
-- **Night / eye-care (`d1`/`d0`/`19`/`e7`) forces warm temp + lower brightness, may
-  LOCK brightness** (writes ACK but ignored) while active.
-- **BI Gen2 auto-bright (`e2=on`) overrides manual brightness continuously** —
-  read-back drifts forever.
-- **sRGB / ePaper modes lock color-preset.**
-- **Input switch (`60`) resets a batch.**
+### Three oracle directions (why two-way)
 
-Detection = **snapshot-diff**: `getvcp ALL --terse` -> change ONE control ->
-`getvcp ALL --terse` -> diff. Any code that moved besides the one touched = a
-coupling edge. Build the dependency graph. Test **both orders** (A->B vs B->A) for
-suspected pairs — hysteresis is real. Add a sleep/wake + input-switch cycle to
-catch non-persistent settings.
+- **A. software -> panel** — `set` then read-back. Weak: stores != controls.
+- **B. panel -> software** — human turns the OSD, we watch *which code moves*.
+  Proves code identity. (Same idea as the TUI's `!` discover, standalone.)
+- **C. software -> eyes** — after a write, ask "did the panel visibly change?".
+  Catches dead / mislabelled registers (write ACKs, read-back matches, nothing
+  happens) — the highest-value finding, and only a human sees it.
 
-**Make the detector CI-testable without hardware:** snapshot/diff/graph logic is
-pure. Extend `FakeMonitor` (already models d9 low-byte) with coupling rules — e.g.
-"setvcp dc resets 10 to a default" — then unit-test that the detector reports that
-edge. Hardware run stays manual; detection logic stays covered.
+Changing values **on the monitor's OSD** (not just in-app) is the high-value path:
+it is the external ground truth and it surfaces coupling (turn night-mode on at the
+panel, watch brightness drop on its own).
+
+### Tech (decided)
+
+- Shell: stdlib **`cmd.Cmd`** + `import readline` (free help/history/tab-complete;
+  `onecmd("set 50")` is unit-testable). No new deps (keeps the "only dep = blessed"
+  promise). Reject prompt_toolkit (weight) and blessed (this is deliberately *not*
+  the TUI).
+- `watch` sub-loop: plain `while: snapshot; sleep(0.3); print diffs`, stop on
+  **Ctrl-C** (`KeyboardInterrupt` returns to the prompt). No threads, no lock —
+  stays out of the TUI's concurrency model. (`select.select` on stdin to also stop
+  on `q`+Enter is a later nicety.)
+
+### Layout (mirrors the existing `tui/{state,loop}` split)
+
+- `bebenqli/debug.py` -> **`class Prober`** = pure engine: `read(code)`,
+  `set_verify(ctrl,val) -> Report`, `snapshot() -> {code:val}`, `diff(a,b)`,
+  `resolve(ctrl,str)` (reuse `cli._resolve`), `record(entry)` (append YAML).
+  **Unit-tested, no pragma.**
+- `bebenqli/idebug.py` -> **`class Console(cmd.Cmd)`** = thin `do_*` delegates +
+  `cmdloop` + `watch` poll + `input()` confirms. **`# pragma: no cover`.**
+- `bebenqli/app.py` -> `idebug [control]` dispatch builds `Ddc` + `Console`.
+- New `Ddc.read_raw(code) -> (cur, max)` surfacing the max byte terse already gives
+  (C 3rd token, CNC `ml`); d9 shown chan-aware (mh/ml leak the color-temp channel).
+
+### Command contracts (MVP v1)
+
+| Type        | Does                                                         | Dir |
+|-------------|--------------------------------------------------------------|-----|
+| `50`/`set 50` | write + verify read-back; print Δ + "else-changed"          | A   |
+| `w 50`      | write-only (noread codes / fire-and-forget)                  | A   |
+| `r`         | read current (+ monitor-reported max)                        | A   |
+| `watch`     | poll this code until you turn the OSD; print transitions     | B   |
+| *(auto)* `visible change? [y/n/skip]` after each set         | eyes oracle | C |
+| `d`/`diff`  | snapshot all codes, diff vs entry baseline -> what else moved | coupling |
+| `use <ctrl>`| switch focused control (test coupling live)                  | —   |
+| `note <txt>`| record a human observation into the YAML log                 | —   |
+| `q`         | quit; offer to restore what *this tool* changed (not OSD)    | —   |
+
+Bare-number `> 50` handled via `cmd.Cmd.default()`. Value parsing reuses
+`cli._resolve` (dec/hex/option-name). Every action appends a YAML record:
+`{ts, control, vcp, action, wrote, readback, max, verified, visible, else_changed,
+note, ddcutil_ver, fw}` -> becomes the README ✓/~/? evidence + a future
+`conflicts:` field on `CONTROLS`.
+
+### Corner cases (human is the classifier — no brittle heuristics)
+
+- **`returncode==0 != applied`** — read-back is truth; the `visible?` prompt is the
+  backstop for semantic no-ops.
+- **Settle latency** — small delay before read-back (e.g. 150ms); `watch` re-reads.
+- **Snap / clamp** — show `Δ-2 (snap?)`, let the human judge (don't auto-FAIL).
+- **Self-drift** (auto-bright `e2`, sensor `e5`) — `watch`/`diff` will show motion
+  with no write; flag known-auto codes as noise.
+- **Write-only** (`d7`, d9 color-temp) — `watch`/read can't verify; rely on `w` +
+  `visible? y/n`. Two-way is the *only* check here.
+- **d9 mux** — `r`/`set`/`watch` print all four bytes (chan-aware).
+- **OSD blocks DDC** — some panels garble reads while the menu is open; reads return
+  None (handled) — nudge value / close menu if reads stall.
+
+### Coverage testability without hardware
+
+Engine is pure -> unit-test with `FakeMonitor`. Extend the fake with **coupling
+rules** (e.g. "setvcp dc resets 10 to a default") so `diff` has an edge to find and
+`set_verify`'s else-changed path is covered. Console I/O loop is pragma'd (like the
+TUI); `onecmd()` smoke-drives dispatch.
+
+### Out of scope (later v2)
+
+`sweep` (snap-grid curve), `watch all` (discovery), `snap` (re-baseline),
+`confirm on/off`, `log` tail, `select`-based `q`-stop, both-order coupling runs,
+README status auto-regeneration.
 
 ---
 
-## Recommended order
+## Manual-only truths
 
-1. **Phase 1 now** — terse parse + `_parse_terse` unit tests. Safe, pure, keeps
-   100%, every later phase depends on a trustworthy read. Smallest blast radius.
-2. Phase 2 sweep script (manual, gated out of CI).
-3. Phase 3 coupling diff — run on real panel, turn findings into the README map +
-   maybe a "conflicts with" field in `CONTROLS`.
-
-Manual-only truths no code can verify: d7/d9 write-only channels, and whether a mode
-*locks* a control (needs eyes on the panel).
+No code can verify these — needs eyes on the panel: d7/d9 write-only channels, and
+whether a mode *locks* a control (write ACKs but is ignored).

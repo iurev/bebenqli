@@ -36,6 +36,7 @@ class FakeMonitor:
         self.values = {}          # vcp code (lowercase) -> int current value
         self.set_fail = set()     # codes whose setvcp returns rc!=0
         self.unreadable = set()   # codes whose getvcp yields no parseable value
+        self.couples = {}         # code -> (other_code, other_value): a coupling edge
         self.detect_out = self.DETECT_OUT
         self.missing_ddcutil = False
 
@@ -72,6 +73,9 @@ class FakeMonitor:
             # d9 is the 16-bit multiplexed Moon Halo register: the hardware only
             # ever reads back the brightness channel's LOW byte, so model that.
             self.values[code] = (val & 0xff) if code == "d9" else val
+            if code in self.couples:                 # this write silently moves another
+                other_code, other_val = self.couples[code]
+                self.values[other_code] = other_val
             return FakeProc(returncode=0)
         return FakeProc()
 
