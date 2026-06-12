@@ -16,7 +16,7 @@ a pile of undocumented BenQ features, without the OSD or BenQ's official app.
 [![python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.3** — expect
+Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.4** — expect
 rough edges.
 
 ![bebenqli TUI](https://github.com/user-attachments/assets/74a4b32b-ff1a-4ccf-a0cb-66d1e9b2fc47)
@@ -97,6 +97,32 @@ bebenqli lazyset volume 25     # write only, no verify (fire-and-forget)
 - Write-only controls (Moon Halo on/off, MH color temp) can't be read back.
 - `lazyset` just writes and exits 0 — use when you don't care to confirm.
 
+### `idebug` — interactive probe console
+
+```bash
+bebenqli idebug brightness     # focus one control, line-based REPL
+bebenqli idebug kvm-switch     # unmapped control -> discovery mode
+```
+
+A round-trip (`set` then read-back) only proves the register *stored* what you
+wrote — not that the code controls the labelled feature, nor that anything visibly
+happened, nor whether one setting silently moves another. `idebug` puts a human +
+the monitor's OSD in the loop to settle that:
+
+| Type        | Does                                                          |
+|-------------|--------------------------------------------------------------|
+| `50` / `cinema` | set + verify read-back; prints Δ and what *else* changed |
+| `w <v>`     | write-only (fire-and-forget / unreadable controls)           |
+| `r`         | read current value (+ monitor-reported max)                  |
+| `watch`     | poll this code while you turn the **OSD** — proves the code is right (Ctrl-C stops) |
+| `d`         | diff every readable code vs entry — reveals coupling         |
+| `use <ctrl>`| switch focus (e.g. flip night-mode, then `d` to see brightness move) |
+| `note <txt>`| record an observation · `q` quit (offers restore)            |
+
+After each accepted write it asks `visible change? [y/N/skip]` — the only way to
+catch a register that stores a value but does nothing. Every action is logged to
+`/tmp/benq/<control>.yaml` as evidence.
+
 ### Options
 
 | Flag              | Meaning                                                       |
@@ -143,7 +169,7 @@ other sub-features are write-only. On/off is a separate register (`d7`).
 
 ## Limitations / scope
 
-- **RD280U only**, **Linux only**, v0.0.3. No Windows/macOS, no other models.
+- **RD280U only**, **Linux only**, v0.0.4. No Windows/macOS, no other models.
 - Several codes are write-only (can't be read back to verify state).
 - Mute (`8d`) is unreliable on this firmware; use Volume=0.
 - Minimally maintained — issues/PRs welcome but responses may be slow.
