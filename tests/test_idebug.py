@@ -126,6 +126,13 @@ def test_record_watch_persists_trail(mon, ddc):
     assert s.log[-1] == {"action": "watch", "vcp": "10", "observed": [1, 2, 3]}
 
 
+def test_record_watch_all_persists_events(mon, ddc):
+    s = _sess(ddc)
+    s.record_watch_all([["d1", 0, 1], ["10", 80, 55]])
+    assert s.log[-1] == {"action": "watch-all",
+                         "events": [["d1", 0, 1], ["10", 80, 55]]}
+
+
 def test_record_discovery_keeps_only_movers(mon, ddc):
     s = _sess(ddc)
     s.record_discovery({"ca": [5], "cb": [5, 6, 7]})   # ca never moved past baseline

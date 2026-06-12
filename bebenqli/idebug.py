@@ -113,6 +113,10 @@ class Session:
         # Persist a watch session's observed sequence so it lands in the YAML.
         self.log.append({"action": "watch", "vcp": vcp, "observed": list(trail)})
 
+    def record_watch_all(self, events):
+        # Persist a `watch all` session: every [vcp, old, new] transition seen.
+        self.log.append({"action": "watch-all", "events": [list(e) for e in events]})
+
     def record_discovery(self, trails):
         # Persist the ranked movers from a discovery sweep (codes that actually
         # moved, most-changed first).
@@ -217,7 +221,7 @@ class Console(cmd.Cmd):  # pragma: no cover
         return (f"idebug: {c['label']}  (vcp {c['vcp']}, {c['type']} {spec})\n"
                 f"  read: {cur}\n"
                 "  cmds: set <val> (or just type <val>) · lazyset <val> · get · "
-                "watch · diff · use <ctrl> · note <txt> · q")
+                "watch · watch all · diff · use <ctrl> · note <txt> · q")
 
     def _setfocus(self, name):
         self.name = name
@@ -273,6 +277,9 @@ class Console(cmd.Cmd):  # pragma: no cover
 
     # ── watch / discover (turn the OSD; Ctrl-C stops) ─────────────────────────
     def do_watch(self, arg):
+        if arg.strip() == "all":
+            self._watch_all()
+            return
         c = self.s.focus
         if "vcp" not in c:
             self._discover()
@@ -280,6 +287,24 @@ class Console(cmd.Cmd):  # pragma: no cover
             print("  (write-only — nothing to watch)")
         else:
             self._watch_one(c["vcp"])
+
+    def _watch_all(self):
+        # Live coupling probe: stream every readable code so you can watch one
+        # value move while you change another on the OSD.
+        prev = self.s.snapshot()
+        events = []
+        print("  watching ALL readable codes — change anything on the OSD (Ctrl-C stops)")
+        try:
+            while True:
+                cur = self.s.snapshot()
+                for vcp, (o, n) in self.s.diff(prev, cur).items():
+                    print(f"  {vcp}: {o}→{n}")
+                    events.append([vcp, o, n])
+                prev = cur
+                time.sleep(0.3)
+        except KeyboardInterrupt:
+            self.s.record_watch_all(events)
+            print("\n  stopped")
 
     def _watch_one(self, vcp):
         prev = self.s.ddc.getvcp(vcp)
