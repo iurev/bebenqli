@@ -1,7 +1,11 @@
 import pytest
 
 import bebenqli as b
-from bebenqli.idebug import Session, Console, _targets
+from bebenqli.idebug import Session, Console, Report, _targets
+
+
+RANGE = {"vcp": "10", "type": "range", "min": 0, "max": 100}
+CYCLE = {"vcp": "60", "type": "cycle", "names": ["DP", "HDMI", "USB-C"]}
 
 
 def _sess(ddc):
@@ -62,6 +66,13 @@ def test_set_verify_writeonly_for_noread(mon, ddc):
     assert rep.status == "writeonly" and rep.got is None
 
 
+def test_set_verify_unverified_when_readback_fails(monkeypatch, mon, ddc):
+    monkeypatch.setattr(ddc, "read_raw", lambda code: (None, None))   # DDC read error
+    s = _sess(ddc)
+    rep = s.set_verify(_ctrl(s, "brightness"), "50")
+    assert rep.status == "unverified" and rep.got is None
+
+
 def test_set_verify_failed_when_ddcutil_rejects(mon, ddc):
     mon.set_fail.add("10")
     s = _sess(ddc)
@@ -106,6 +117,43 @@ def test_add_note_appends(mon, ddc):
     s = _sess(ddc)
     s.add_note("flickered")
     assert s.log[-1] == {"action": "note", "text": "flickered"}
+
+
+def test_record_watch_persists_trail(mon, ddc):
+    s = _sess(ddc)
+    s.record_watch("10", [1, 2, 3])
+    assert s.log[-1] == {"action": "watch", "vcp": "10", "observed": [1, 2, 3]}
+
+
+def test_record_discovery_keeps_only_movers(mon, ddc):
+    s = _sess(ddc)
+    s.record_discovery({"ca": [5], "cb": [5, 6, 7]})   # ca never moved past baseline
+    assert s.log[-1] == {"action": "discover",
+                         "movers": [{"vcp": "cb", "trail": [5, 6, 7]}]}
+
+
+# ── pure formatters ──────────────────────────────────────────────────────────
+def test_spec_str_cycle_and_range():
+    assert Session.spec_str(CYCLE) == "{DP|HDMI|USB-C}"
+    assert Session.spec_str(RANGE) == "0..100"
+
+
+@pytest.mark.parametrize("rep,expected", [
+    (Report("verified", 50, "50", 50, "50", {}),
+     "set 10→50 · readback 50 (verified)"),
+    (Report("mismatch", 50, "50", 47, "47", {}),
+     "set 10→50 · readback 47 (MISMATCH)"),
+    (Report("writeonly", 0x20, "ON", None, None, {}),
+     "set 10→ON (write-only, unverified)"),
+    (Report("failed", 50, "50", None, None, {}),
+     "set 10: FAILED (ddcutil rejected)"),
+    (Report("unverified", 50, "50", None, None, {}),
+     "set 10→50 (no read-back — DDC error)"),
+    (Report("verified", 50, "50", 50, "50", {"dc": (1, 2)}),
+     "set 10→50 · readback 50 (verified) · else: dc:1→2"),
+])
+def test_report_line(rep, expected):
+    assert Session.report_line(RANGE, rep) == expected
 
 
 def test_restore_writes_back_captured_value(mon, ddc):

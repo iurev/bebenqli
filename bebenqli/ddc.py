@@ -62,9 +62,9 @@ def _parse_raw(out):
         try:
             if typ == "C":
                 return (int(t[3]), int(t[4]))
-            if typ == "SNC":
+            if typ in ("SNC", "NC"):                 # single significant byte, no max
                 return (int(t[-1].lstrip("xX"), 16), None)
-            if typ in ("NC", "CNC"):
+            if typ == "CNC":                          # mh ml sh sl -> (SL, ML=max)
                 return (int(t[-1].lstrip("xX"), 16), int(t[4].lstrip("xX"), 16))
         except (ValueError, IndexError):
             return (None, None)

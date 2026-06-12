@@ -47,6 +47,7 @@ def test_getvcp_skips_noise_lines_before_vcp(monkeypatch, ddc):
 @pytest.mark.parametrize("stdout,expected", [
     ("VCP 10 C 42 100", (42, 100)),                 # continuous -> (cur, max)
     ("VCP 60 SNC x11", (0x11, None)),               # simple NC -> no max
+    ("VCP 60 NC x11", (0x11, None)),                 # NC alias -> single byte, no max
     ("VCP 62 CNC x00 x32 x00 x17", (0x17, 0x32)),   # complex NC -> (SL, ML=max)
     ("VCP AB ERR", (None, None)),                    # unsupported
     ("VCP 10 C xx 100", (None, None)),               # bad decimal

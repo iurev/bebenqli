@@ -81,9 +81,14 @@ class Session:
             status = "writeonly"
         else:
             got = self.ddc.read_raw(vcp)[0]
-            status = "verified" if got == target else "mismatch"
+            status = ("verified" if got == target
+                      else "unverified" if got is None    # read-back failed (DDC error)
+                      else "mismatch")
+        # else-changed = coupling (drop the focus code itself). Self-drifting
+        # auto-movers (e2/e5) may also show here; the human judges those — we
+        # don't guess-filter, since that would hide real edges too.
         else_changed = self.diff(before, self.snapshot())
-        else_changed.pop(vcp, None)                # the focus code itself isn't "else"
+        else_changed.pop(vcp, None)
         self.log.append({"action": "set", "vcp": vcp, "wrote": target,
                          "readback": got, "status": status,
                          "else_changed": {k: list(v) for k, v in else_changed.items()},
@@ -98,6 +103,40 @@ class Session:
 
     def add_note(self, text):
         self.log.append({"action": "note", "text": text})
+
+    def record_watch(self, vcp, trail):
+        # Persist a watch session's observed sequence so it lands in the YAML.
+        self.log.append({"action": "watch", "vcp": vcp, "observed": list(trail)})
+
+    def record_discovery(self, trails):
+        # Persist the ranked movers from a discovery sweep (codes that actually
+        # moved, most-changed first).
+        movers = [{"vcp": code, "trail": trail}
+                  for code, trail in self.rank_movers(trails) if len(trail) > 1]
+        self.log.append({"action": "discover", "movers": movers})
+
+    # ── formatting (pure — kept here so it's tested, not in the pragma'd shell) ─
+    @staticmethod
+    def spec_str(ctrl):
+        if ctrl["type"] == "cycle":
+            return "{" + "|".join(ctrl["names"]) + "}"
+        return f"{ctrl['min']}..{ctrl['max']}"
+
+    @staticmethod
+    def report_line(ctrl, rep):
+        tail = ""
+        if rep.else_changed:
+            tail = " · else: " + ", ".join(
+                f"{vcp}:{o}→{n}" for vcp, (o, n) in rep.else_changed.items())
+        if rep.status == "failed":
+            return f"set {ctrl['vcp']}: FAILED (ddcutil rejected){tail}"
+        if rep.status == "writeonly":
+            return f"set {ctrl['vcp']}→{rep.shown} (write-only, unverified){tail}"
+        if rep.status == "unverified":
+            return f"set {ctrl['vcp']}→{rep.shown} (no read-back — DDC error){tail}"
+        verdict = "verified" if rep.status == "verified" else "MISMATCH"
+        return (f"set {ctrl['vcp']}→{rep.shown} · readback {rep.got_shown} "
+                f"({verdict}){tail}")
 
     def restore(self):
         # Write back the originals this tool captured (best-effort). Returns count.
@@ -157,14 +196,16 @@ class Console(cmd.Cmd):  # pragma: no cover
         self.prompt = f"{name}> "
         self.intro = self._banner()
 
+    def emptyline(self):
+        pass                                     # bare Enter is a no-op (don't repeat)
+
     # ── orientation ──────────────────────────────────────────────────────────
     def _banner(self):
         c = self.s.focus
         if "vcp" not in c:
             return (f"idebug: {c['label']}  (unmapped — discovery)\n"
                     "  turn the setting on the MONITOR'S OSD, then: watch · q")
-        spec = ("{" + "|".join(c["names"]) + "}" if c["type"] == "cycle"
-                else f"{c['min']}..{c['max']}")
+        spec = self.s.spec_str(c)
         r = self.s.read(c)
         cur = "(write-only)" if r is None else f"{_fmt(c, r[0])}" + (
             f"  max {r[1]}" if r[1] is not None else "")
@@ -198,21 +239,9 @@ class Console(cmd.Cmd):  # pragma: no cover
         except ValueError as e:
             print(f"  {e}")
             return
-        print("  " + self._report(c, rep))
+        print("  " + self.s.report_line(c, rep))
         if rep.status in ("verified", "writeonly"):
             self._ask_visible()
-
-    def _report(self, c, rep):
-        tail = ""
-        if rep.else_changed:
-            tail = " · else: " + ", ".join(
-                f"{vcp}:{o}→{n}" for vcp, (o, n) in rep.else_changed.items())
-        if rep.status == "failed":
-            return f"set {c['vcp']}: FAILED (ddcutil rejected){tail}"
-        if rep.status == "writeonly":
-            return f"set {c['vcp']}→{rep.shown} (write-only, unverified){tail}"
-        verdict = "verified" if rep.status == "verified" else "MISMATCH"
-        return f"set {c['vcp']}→{rep.shown} · readback {rep.got_shown} ({verdict}){tail}"
 
     def _ask_visible(self):
         ans = input("  visible change? [y/N/skip] ").strip().lower()
@@ -251,6 +280,7 @@ class Console(cmd.Cmd):  # pragma: no cover
 
     def _watch_one(self, vcp):
         prev = self.s.ddc.getvcp(vcp)
+        trail = [prev]
         print(f"  watching {vcp} — change it on the MONITOR'S OSD (Ctrl-C stops)")
         try:
             while True:
@@ -258,8 +288,10 @@ class Console(cmd.Cmd):  # pragma: no cover
                 if moved:
                     print(f"  {vcp}: {prev}→{v}")
                     prev = v
+                    trail.append(v)
                 time.sleep(0.3)
         except KeyboardInterrupt:
+            self.s.record_watch(vcp, trail)      # persist evidence to the YAML
             print("\n  stopped")
 
     def _discover(self):
@@ -269,15 +301,19 @@ class Console(cmd.Cmd):  # pragma: no cover
         print(f"  {len(base)} live codes — wiggle the setting on the OSD (Ctrl-C stops)")
         try:
             while True:
+                changed = False
                 for code in list(base):
                     v, moved = self.s.poll_once(code, trails[code][-1])
                     if moved and self.s.step(trails, code, v):
-                        top = self.s.rank_movers({c: t for c, t in trails.items()
-                                                  if len(t) > 1})
-                        print("  " + " · ".join(f"{c}:{'→'.join(map(str, t))}"
-                                                for c, t in top[:5]))
+                        changed = True
+                if changed:                       # print once per tick, not per code
+                    top = self.s.rank_movers({c: t for c, t in trails.items()
+                                              if len(t) > 1})
+                    print("  " + " · ".join(f"{c}:{'→'.join(map(str, t))}"
+                                            for c, t in top[:5]))
                 time.sleep(0.1)
         except KeyboardInterrupt:
+            self.s.record_discovery(trails)       # persist ranked movers to the YAML
             print("\n  stopped")
 
     # ── meta ─────────────────────────────────────────────────────────────────
