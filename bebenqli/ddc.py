@@ -46,6 +46,32 @@ def _parse_terse(out):
     return None                              # no VCP line at all
 
 
+def _parse_raw(out):
+    # Like _parse_terse but also extracts the monitor-reported max:
+    #   C   -> (cur-dec, max-dec)        from "VCP <c> C <cur> <max>"
+    #   CNC -> (SL, ML)                  cur = last token, max = 2nd hex (ML byte)
+    #   SNC -> (SL, None)                single byte, no max reported
+    #   ERR/T/malformed -> (None, None); never raises.
+    for line in out.splitlines():
+        if not line.startswith("VCP"):
+            continue
+        t = line.split()
+        if len(t) < 4:
+            return (None, None)
+        typ = t[2]
+        try:
+            if typ == "C":
+                return (int(t[3]), int(t[4]))
+            if typ == "SNC":
+                return (int(t[-1].lstrip("xX"), 16), None)
+            if typ in ("NC", "CNC"):
+                return (int(t[-1].lstrip("xX"), 16), int(t[4].lstrip("xX"), 16))
+        except (ValueError, IndexError):
+            return (None, None)
+        return (None, None)
+    return (None, None)
+
+
 def detect_bus(model=MODEL):
     # Parse `ddcutil detect`; return the i2c bus number whose monitor model
     # string contains `model`. The bus is assigned by the kernel per GPU+port,
@@ -104,3 +130,12 @@ class Ddc:
         if self.verbose:
             print("$ " + " ".join(cmd), file=sys.stderr)
         return _parse_terse(proc.run_proc(cmd, text=True).stdout)
+
+    def read_raw(self, code):
+        # Like getvcp, but also returns the monitor-reported max (None when the
+        # type carries no max, e.g. SNC). Used by the idebug console to show the
+        # real max and cross-check it against the hardcoded CONTROLS range.
+        cmd = self.cmd + ["--terse", "getvcp", code]
+        if self.verbose:
+            print("$ " + " ".join(cmd), file=sys.stderr)
+        return _parse_raw(proc.run_proc(cmd, text=True).stdout)
