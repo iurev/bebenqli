@@ -58,6 +58,7 @@ def test_set_verify_mismatch(monkeypatch, mon, ddc):
     s = _sess(ddc)
     rep = s.set_verify(_ctrl(s, "brightness"), "50")
     assert rep.status == "mismatch" and rep.got == 47 and rep.got_shown == "47"
+    assert mon.values["10"] == 50                 # the write really happened
 
 
 def test_set_verify_writeonly_for_noread(mon, ddc):
@@ -168,6 +169,23 @@ def test_restore_skips_unreadable_original(mon, ddc):
     s = _sess(ddc)
     s.set_verify(_ctrl(s, "volume"), "30")       # nothing pre-set -> original None
     assert s.restore() == 0
+
+
+def test_restore_skips_noread_channel(mon, ddc):
+    # MH Color Temp (d9 chan 0x07, noread): can't read its true value -> never
+    # restored, so we don't write a bogus (brightness-derived) value into it.
+    s = _sess(ddc)
+    s.set_verify(_ctrl(s, "mh-color-temp"), "5")
+    assert s.restore() == 0
+
+
+def test_restore_brightness_uses_chan(mon, ddc):
+    mon.values["d9"] = 3                          # MH Brightness reads back the low byte
+    s = _sess(ddc)
+    s.set_verify(_ctrl(s, "mh-brightness"), "5")  # original captured = 3
+    assert s.restore() == 1
+    assert mon.values["d9"] == 3                  # (0x01<<8)|3 written -> low byte 3
+    assert mon.cmds("setvcp", "d9", "--noverify") or mon.cmds("--noverify", "setvcp")
 
 
 def test_yaml_doc_focused(mon, ddc):

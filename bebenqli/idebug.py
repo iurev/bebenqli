@@ -72,7 +72,12 @@ class Session:
     def _write(self, ctrl, target, verify):
         vcp = ctrl["vcp"]
         before = self.snapshot()
-        self.originals.setdefault(vcp, (before.get(vcp), ctrl))   # for restore
+        # Capture the original for restore, keyed by (vcp, chan) so multiplexed d9
+        # channels don't collide. noread channels capture None -> never restored
+        # (snapshot can't read their true value, so we don't guess-write one).
+        key = (vcp, ctrl.get("chan"))
+        orig = None if ctrl.get("noread") else before.get(vcp)
+        self.originals.setdefault(key, (orig, ctrl))
         ok = self.ddc.setvcp(vcp, target, ctrl.get("chan"), ctrl.get("noverify"))
         got = None
         if not ok:
@@ -141,7 +146,7 @@ class Session:
     def restore(self):
         # Write back the originals this tool captured (best-effort). Returns count.
         n = 0
-        for vcp, (val, ctrl) in self.originals.items():
+        for (vcp, _chan), (val, ctrl) in self.originals.items():
             if val is not None:
                 self.ddc.setvcp(vcp, val, ctrl.get("chan"), ctrl.get("noverify"))
                 n += 1
