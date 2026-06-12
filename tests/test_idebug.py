@@ -23,6 +23,14 @@ def test_snapshot_reads_mapped_readable(mon, ddc):
     assert snap["10"] == 80 and snap["62"] == 23
 
 
+def test_snapshot_progress_callback_fires_per_read(mon, ddc):
+    seen = []
+    _sess(ddc).snapshot(progress=lambda i, t, vcp: seen.append((i, t, vcp)))
+    assert seen[0][0] == 1                          # 1-based index
+    assert len(seen) == seen[0][1]                  # called once per readable code
+    assert all(t == seen[0][1] for _, t, _ in seen)  # total constant
+
+
 def test_snapshot_skips_noread_and_unanswered(mon, ddc):
     mon.values["10"] = 80                      # d9 color-temp is noread -> absent
     snap = _sess(ddc).snapshot()

@@ -36,12 +36,15 @@ class Session:
         self.baseline = self.snapshot()      # entry state, for the `d` (diff) command
 
     # ── reads ────────────────────────────────────────────────────────────────
-    def snapshot(self):
+    def snapshot(self, progress=None):
         # Read every readable mapped control -> {vcp: value}. The coupling surface.
+        # `progress(i, total, vcp)` is called before each (slow) read so a watch
+        # loop can show a live heartbeat — reads are sequential ddcutil calls.
+        readable = [c for c in self.controls.values() if not c.get("noread")]
         out = {}
-        for c in self.controls.values():
-            if c.get("noread"):
-                continue
+        for i, c in enumerate(readable, 1):
+            if progress:
+                progress(i, len(readable), c["vcp"])
             v = self.ddc.getvcp(c["vcp"])
             if v is not None:
                 out[c["vcp"]] = v
@@ -194,6 +197,9 @@ def _targets():
             if "vcp" in c or c.get("type") == "missing"}
 
 
+_SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+
 class Console(cmd.Cmd):  # pragma: no cover
     """Line-based REPL over a Session. All I/O lives here; the logic is in Session."""
 
@@ -204,6 +210,17 @@ class Console(cmd.Cmd):  # pragma: no cover
         self.targets = targets
         self.prompt = f"{name}> "
         self.intro = self._banner()
+        self._spin = 0
+
+    # ── live heartbeat (reads are slow sequential ddcutil calls) ───────────────
+    def _beat(self, text):
+        frame = _SPIN[self._spin % len(_SPIN)]
+        self._spin += 1
+        print(f"\r  {frame} {text}\033[K", end="", flush=True)
+
+    @staticmethod
+    def _clearline():
+        print("\r\033[K", end="")            # wipe the heartbeat before a real line
 
     def emptyline(self):
         pass                                     # bare Enter is a no-op (don't repeat)
@@ -293,56 +310,73 @@ class Console(cmd.Cmd):  # pragma: no cover
         # value move while you change another on the OSD.
         prev = self.s.snapshot()
         events = []
+        poll = 0
         print("  watching ALL readable codes — change anything on the OSD (Ctrl-C stops)")
         try:
             while True:
-                cur = self.s.snapshot()
-                for vcp, (o, n) in self.s.diff(prev, cur).items():
-                    print(f"  {vcp}: {o}→{n}")
-                    events.append([vcp, o, n])
+                poll += 1
+                cur = self.s.snapshot(progress=lambda i, t, c:
+                                      self._beat(f"watch all · poll {poll} · {i}/{t} {c}"))
+                moved = self.s.diff(prev, cur)
+                if moved:
+                    self._clearline()
+                    for vcp, (o, n) in moved.items():
+                        print(f"  {vcp}: {o}→{n}")
+                        events.append([vcp, o, n])
                 prev = cur
-                time.sleep(0.3)
+                time.sleep(0.1)
         except KeyboardInterrupt:
+            self._clearline()
             self.s.record_watch_all(events)
-            print("\n  stopped")
+            print("  stopped")
 
     def _watch_one(self, vcp):
         prev = self.s.ddc.getvcp(vcp)
         trail = [prev]
+        poll = 0
         print(f"  watching {vcp} — change it on the MONITOR'S OSD (Ctrl-C stops)")
         try:
             while True:
+                poll += 1
                 v, moved = self.s.poll_once(vcp, prev)
                 if moved:
+                    self._clearline()
                     print(f"  {vcp}: {prev}→{v}")
                     prev = v
                     trail.append(v)
+                self._beat(f"watch {vcp} · poll {poll} · now {prev}")
                 time.sleep(0.3)
         except KeyboardInterrupt:
+            self._clearline()
             self.s.record_watch(vcp, trail)      # persist evidence to the YAML
-            print("\n  stopped")
+            print("  stopped")
 
     def _discover(self):
         print("  baseline sweep…")
         base = self.s.baseline_codes()
         trails = {code: [v] for code, v in base.items()}
         print(f"  {len(base)} live codes — wiggle the setting on the OSD (Ctrl-C stops)")
+        poll = 0
         try:
             while True:
+                poll += 1
                 changed = False
-                for code in list(base):
+                for i, code in enumerate(list(base), 1):
+                    self._beat(f"discover · poll {poll} · {i}/{len(base)} {code}")
                     v, moved = self.s.poll_once(code, trails[code][-1])
                     if moved and self.s.step(trails, code, v):
                         changed = True
                 if changed:                       # print once per tick, not per code
+                    self._clearline()
                     top = self.s.rank_movers({c: t for c, t in trails.items()
                                               if len(t) > 1})
                     print("  " + " · ".join(f"{c}:{'→'.join(map(str, t))}"
                                             for c, t in top[:5]))
                 time.sleep(0.1)
         except KeyboardInterrupt:
+            self._clearline()
             self.s.record_discovery(trails)       # persist ranked movers to the YAML
-            print("\n  stopped")
+            print("  stopped")
 
     # ── meta ─────────────────────────────────────────────────────────────────
     def do_use(self, arg):
