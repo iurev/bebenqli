@@ -23,41 +23,99 @@ You can't validate values against an untrustworthy read-back. Fix the oracle fir
 ddcutil already emits machine output: `--terse` (`-t`). Deterministic tokens, no
 prose scraping.
 
+### Real terse output (captured live, RD280U bus 21, ddcutil 2.2.7)
+
 ```
-$ ddcutil --terse getvcp 10   ->  VCP 10 C 80 100      # continuous: cur max
-$ ddcutil --terse getvcp 60   ->  VCP 60 SNC x0f       # simple non-cont: sl byte
-$ ddcutil --terse getvcp dc   ->  VCP DC CNC x00 x32   # complex non-cont: sh sl
+VCP 10 C 1 100              C    -> "VCP <code> C <cur-dec> <max-dec>"
+VCP DC SNC x30              SNC  -> "VCP <code> SNC x<sl>"            (1 hex byte)
+VCP 60 SNC x13              SNC
+VCP 62 CNC x00 x32 x00 x17  CNC  -> "VCP <code> CNC x<mh> x<ml> x<sh> x<sl>"  (4 bytes)
+VCP D9 CNC x07 x0a x01 x05  CNC  (MoonHalo: sl=05 brightness; mh/ml=07 0a = color-temp chan!)
+VCP C9 CNC xff xff x00 x19  CNC  (firmware: mh/ml = ff ff = no-max sentinel)
+VCP AB ERR                  ERR  -> unsupported, rc=1
 ```
 
-Replace the regex ladder with one pure `_parse_terse(code, out)` keyed on the type
-letter (`C` / `SNC` / `CNC` / `T`):
+**Format facts (corrected from the original guess):**
+- `C`: significant current = **2nd field** (decimal); max = 3rd field (decimal).
+- `SNC`: 1 hex byte = the **SL** (low) byte. Significant value.
+- `CNC`: **4** hex bytes `mh ml sh sl` (max-hi, max-lo, cur-hi, cur-lo). Significant
+  current = **last token (sl)**; max = `ml` (2nd hex). *Not* 2 bytes as planned.
+- Output **uppercases the code** (`dc` -> `DC`). Parser must key on the **type
+  token**, never on the code's case.
+- `ERR` token (rc=1) for unsupported / unreadable -> return `None`.
+- For both `SNC` and `CNC` the wanted byte is the **last token** -> one code path.
 
-- `C`   -> `(current, max)` — return current, **and get max for free** (corner case 14).
-- `SNC` -> low byte.
-- `CNC` -> `(sh, sl)` — return sl (matches today's `sl=` behavior).
-- `T`   -> table hex bytes.
+### `_parse_terse(out)` — pure, total (never raises)
 
-Wins:
+```python
+def _parse_terse(out):
+    for line in out.splitlines():
+        if not line.startswith("VCP"):
+            continue
+        t = line.split()
+        if len(t) < 4:                      # "VCP DC ERR" / malformed -> None
+            return None
+        typ = t[2]
+        try:
+            if typ == "C":
+                return int(t[3])            # current; max = t[4] (ignored for now)
+            if typ in ("SNC", "NC", "CNC"):
+                return int(t[-1].lstrip("xX"), 16)   # SL byte, last token
+        except (ValueError, IndexError):
+            return None
+        return None                         # ERR / T / unknown type
+    return None                             # no VCP line
+```
 
-- **Pure function -> unit-testable -> keeps 100% coverage** with no hardware. The
-  fragile part stops being `# pragma`'d guesswork.
-- Kills the "grabbed the wrong hex" class of false read-backs.
-- Add `--sleep-multiplier 2`: slows DDC I/O so slow/flaky reads stop returning
-  garbage (real fix for the `~` mute and transient errors). Also
-  `getvcp ALL --terse` snapshots every readable code in one shot — needed for
-  Phase 3.
-
-**Caveat:** terse does NOT fix d9 MoonHalo. Read-back still only returns the
-brightness-channel low byte. Color-temp / on-off channels stay genuinely
-write-only — no parse trick changes that.
-
-New shape:
+`getvcp` becomes a thin wrapper:
 
 ```python
 def getvcp(self, code):
-    r = proc.run_proc(self.cmd + ["--terse", "getvcp", code], text=True)
-    return _parse_terse(code, r.stdout)   # pure, fully unit-tested
+    cmd = self.cmd + ["--terse", "getvcp", code]
+    if self.verbose:
+        print("$ " + " ".join(cmd), file=sys.stderr)
+    return _parse_terse(proc.run_proc(cmd, text=True).stdout)
 ```
+
+Behavior is **value-compatible**: returns the same single int callers expect
+(`cli._read`, `tui.state.seed`). d9 still yields its SL low byte (05) — matches the
+existing FakeMonitor model and the "MH brightness only" contract.
+
+Wins:
+- **Pure + total -> unit-testable -> keeps 100% coverage**, no hardware. The fragile
+  part stops being guesswork; the 4-regex ladder + its 6 parametrized cases are
+  replaced by deterministic token parsing.
+- Kills the "grabbed the wrong hex" false-readback class (old `sl=0x..` /
+  trailing-`(0x..)` regexes could match a max or an unrelated byte).
+
+### Corner cases handled / deferred
+
+- **Total parser** — wrap int() in try/except so a garbled line can't crash the TUI
+  poll loop; returns `None` like the old no-match path.
+- **Multi-line / noise** — scan for the line starting `VCP`; ignore the rest
+  (groups, `--ddcdata` chatter). Phase 1 only queries single codes.
+- **Code case / hex prefix** — key on type token; `lstrip("xX")` the value.
+- **max for free** (C 3rd field, CNC `ml`) — *not* surfaced in Phase 1 (would change
+  the return type and break callers). Deferred to Phase 2 as a separate
+  `read_raw()` returning `(cur, max)` for the range-vs-hardcoded cross-check.
+- **`--sleep-multiplier`** — deferred to Phase 2 (sweep). It slows every call and is
+  a reliability knob, not a parse fix; keep Phase 1 minimal.
+
+### Test impact (must stay green at 100%)
+
+- `tests/test_vcp.py` — rewrite `test_getvcp_parses` parametrize from verbose
+  strings to terse ones: `VCP 10 C 42 100`->42, `VCP 60 SNC x11`->0x11,
+  `VCP 62 CNC x00 x32 x00 x17`->0x17, `VCP DC ERR`->None, `garbage`->None,
+  `VCP 10 C xx 100` (bad int)->None. Drop the now-obsolete `current value`/`sl=`/
+  `Volume level:`/trailing-hex cases and `test_getvcp_priority_*`.
+- Command assertion: `getvcp` cmd now contains `--terse`; verbose-echo test still
+  matches `getvcp 10`.
+- `tests/conftest.py` `FakeMonitor._ddcutil` — emit terse instead of verbose:
+  readable -> `"VCP %s C %d 100" % (code, val)`; unreadable -> `"VCP %s ERR"`.
+  (C-format round-trips every integer value the integration tests assert,
+  regardless of the control's real NC/C type — the unit tests above cover the
+  SNC/CNC branches directly.)
+- `re` import stays in `ddc.py` (still used by `detect_bus`).
 
 ---
 

@@ -16,24 +16,42 @@ def test_build_cmd():
     assert b.build_cmd("7") == ["ddcutil", "--bus", "7", "--permit-unknown-feature"]
 
 
-# ── getvcp parse branches ───────────────────────────────────────────────────
+# ── getvcp --terse parse branches ───────────────────────────────────────────
 @pytest.mark.parametrize("stdout,expected", [
-    ("VCP 10: current value = 42, max value = 100", 42),
-    ("VCP 60: sl=0x11 (HDMI)", 0x11),
-    ("Audio: Volume level: 23", 23),
-    ("Fixed (default) level (0x00)", 0),     # trailing-hex fallback, zero
-    ("Something (0x1f)", 0x1f),              # trailing-hex fallback
-    ("no parseable token here", None),       # nothing matches -> None
+    ("VCP 10 C 42 100", 42),                      # continuous -> current decimal
+    ("VCP 10 C 0 100", 0),                         # continuous zero
+    ("VCP 60 SNC x11", 0x11),                      # simple NC -> SL byte (hex)
+    ("VCP DC SNC x30", 0x30),                       # output uppercases the code
+    ("VCP 62 CNC x00 x32 x00 x17", 0x17),           # complex NC -> last token (SL)
+    ("VCP D9 CNC x07 x0a x01 x05", 0x05),           # MoonHalo: SL=05, mh/ml ignored
+    ("VCP AB ERR", None),                           # unsupported -> None
+    ("VCP DC", None),                               # truncated line -> None
+    ("VCP 10 C xx 100", None),                       # un-parseable int -> None
+    ("VCP 10 T 0102", None),                         # table type unsupported -> None
+    ("garbage no vcp line", None),                   # no VCP line -> None
+    ("", None),                                      # empty output -> None
 ])
 def test_getvcp_parses(monkeypatch, ddc, stdout, expected):
     _stub_stdout(monkeypatch, stdout)
     assert ddc.getvcp("10") == expected
 
 
-def test_getvcp_priority_current_value_wins(monkeypatch, ddc):
-    # both "current value" and a trailing hex present; current value takes priority
-    _stub_stdout(monkeypatch, "current value = 7 ... (0x1f)")
-    assert ddc.getvcp("10") == 7
+def test_getvcp_skips_noise_lines_before_vcp(monkeypatch, ddc):
+    # real ddcutil may emit chatter before the VCP line; parser scans to it.
+    _stub_stdout(monkeypatch, "some warning\nVCP 62 CNC x00 x32 x00 x17\n")
+    assert ddc.getvcp("62") == 0x17
+
+
+def test_getvcp_uses_terse_flag(monkeypatch, ddc):
+    seen = {}
+
+    def fake(cmd, text=False):
+        seen["cmd"] = cmd
+        return types.SimpleNamespace(stdout="VCP 10 C 5 100", returncode=0, stderr="")
+
+    monkeypatch.setattr(b.proc, "run_proc", fake)
+    assert ddc.getvcp("10") == 5
+    assert "--terse" in seen["cmd"]
 
 
 # ── setvcp behaviour ────────────────────────────────────────────────────────

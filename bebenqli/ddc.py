@@ -19,6 +19,33 @@ def build_cmd(bus):
     return ["ddcutil", "--bus", str(bus), "--permit-unknown-feature"]
 
 
+def _parse_terse(out):
+    # Parse `ddcutil --terse getvcp <code>`. Deterministic tokens, no prose:
+    #   C   -> "VCP <code> C <cur-dec> <max-dec>"          -> current (decimal)
+    #   SNC -> "VCP <code> SNC x<sl>"                       -> SL byte  (hex)
+    #   CNC -> "VCP <code> CNC x<mh> x<ml> x<sh> x<sl>"     -> SL byte  (last token)
+    #   ERR -> unsupported/unreadable                       -> None
+    # For SNC and CNC the wanted byte is always the LAST token (the SL low byte),
+    # so they share one path. Total: any malformed line yields None, never raises,
+    # so the TUI poll loop can't crash on a garbled read.
+    for line in out.splitlines():
+        if not line.startswith("VCP"):
+            continue
+        t = line.split()
+        if len(t) < 4:                       # "VCP DC ERR" / truncated
+            return None
+        typ = t[2]
+        try:
+            if typ == "C":
+                return int(t[3])             # current; max = t[4], unused for now
+            if typ in ("SNC", "NC", "CNC"):
+                return int(t[-1].lstrip("xX"), 16)
+        except (ValueError, IndexError):
+            return None
+        return None                          # ERR / T / unknown type
+    return None                              # no VCP line at all
+
+
 def detect_bus(model=MODEL):
     # Parse `ddcutil detect`; return the i2c bus number whose monitor model
     # string contains `model`. The bus is assigned by the kernel per GPU+port,
@@ -72,18 +99,8 @@ class Ddc:
         return r.returncode == 0   # True = ddcutil accepted the write
 
     def getvcp(self, code):
-        cmd = self.cmd + ["getvcp", code]
+        # --terse gives machine-readable "VCP <code> <type> <vals>" (see _parse_terse).
+        cmd = self.cmd + ["--terse", "getvcp", code]
         if self.verbose:
             print("$ " + " ".join(cmd), file=sys.stderr)
-        r = proc.run_proc(cmd, text=True)
-        out = r.stdout
-        m = re.search(r"current value\s*=\s*(\d+)", out)
-        if m: return int(m.group(1))
-        m = re.search(r"sl=0x([0-9a-fA-F]+)", out)
-        if m: return int(m.group(1), 16)
-        m = re.search(r"Volume level:\s*(\d+)", out)
-        if m: return int(m.group(1))
-        # fallback: trailing "(0x..)" / "(00x..)" hex, e.g. volume 0 = "Fixed (default) level (0x00)"
-        m = re.search(r"\(0*x([0-9a-fA-F]+)\)", out)
-        if m: return int(m.group(1), 16)
-        return None
+        return _parse_terse(proc.run_proc(cmd, text=True).stdout)
