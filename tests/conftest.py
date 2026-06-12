@@ -57,10 +57,12 @@ class FakeMonitor:
         if "getvcp" in cmd:
             code = cmd[cmd.index("getvcp") + 1].lower()
             if code in self.unreadable or code not in self.values:
-                return FakeProc(stdout="VCP code 0x%s (unknown): no value\n" % code)
-            # shaped like real ddcutil output: "VCP code 0xNN (...): current value = N, ..."
-            return FakeProc(stdout="VCP code 0x%s (feature): current value = %d, "
-                            "max value = 100\n" % (code, self.values[code]))
+                return FakeProc(stdout="VCP %s ERR\n" % code)
+            # machine-readable --terse continuous form: "VCP <code> C <cur> <max>".
+            # C round-trips every integer value the integration tests assert,
+            # regardless of the control's real NC/C type (unit tests in test_vcp
+            # cover the SNC/CNC parse branches directly).
+            return FakeProc(stdout="VCP %s C %d 100\n" % (code, self.values[code]))
         if "setvcp" in cmd:
             i = cmd.index("setvcp")
             code = cmd[i + 1].lower()
