@@ -26,7 +26,8 @@ def test_build_cmd():
     ("VCP D9 CNC x07 x0a x01 x05", 0x05),           # MoonHalo: SL=05, mh/ml ignored
     ("VCP AB ERR", None),                           # unsupported -> None
     ("VCP DC", None),                               # truncated line -> None
-    ("VCP 10 C xx 100", None),                       # un-parseable int -> None
+    ("VCP 10 C xx 100", None),                       # un-parseable decimal -> None
+    ("VCP 60 SNC xZZ", None),                         # un-parseable hex -> None
     ("VCP 10 T 0102", None),                         # table type unsupported -> None
     ("garbage no vcp line", None),                   # no VCP line -> None
     ("", None),                                      # empty output -> None
