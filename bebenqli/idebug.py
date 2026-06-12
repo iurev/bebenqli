@@ -216,8 +216,8 @@ class Console(cmd.Cmd):  # pragma: no cover
             f"  max {r[1]}" if r[1] is not None else "")
         return (f"idebug: {c['label']}  (vcp {c['vcp']}, {c['type']} {spec})\n"
                 f"  read: {cur}\n"
-                "  cmds: <v> set+verify · w <v> write-only · r read · watch · "
-                "d diff-all · use <ctrl> · note <txt> · q")
+                "  cmds: set <val> (or just type <val>) · lazyset <val> · get · "
+                "watch · diff · use <ctrl> · note <txt> · q")
 
     def _setfocus(self, name):
         self.name = name
@@ -231,7 +231,7 @@ class Console(cmd.Cmd):  # pragma: no cover
     def do_set(self, arg):
         self._do_write(arg, self.s.set_verify)
 
-    def do_w(self, arg):
+    def do_lazyset(self, arg):
         self._do_write(arg, self.s.write_only)
 
     def _do_write(self, arg, fn):
@@ -253,7 +253,7 @@ class Console(cmd.Cmd):  # pragma: no cover
         self.s.set_visible(ans or "skip")
 
     # ── reads ────────────────────────────────────────────────────────────────
-    def do_r(self, arg):
+    def do_get(self, arg):
         c = self.s.focus
         r = self.s.read(c) if "vcp" in c else None
         if r is None:
@@ -262,7 +262,7 @@ class Console(cmd.Cmd):  # pragma: no cover
             mx = f"  (max {r[1]})" if r[1] is not None else ""
             print(f"  {c['vcp']} = {_fmt(c, r[0])}{mx}")
 
-    def do_d(self, arg):
+    def do_diff(self, arg):
         moved = self.s.diff(self.s.baseline, self.s.snapshot())
         if not moved:
             print("  no change since start")
@@ -270,8 +270,6 @@ class Console(cmd.Cmd):  # pragma: no cover
         for vcp, (o, n) in moved.items():
             tag = "  (noise)" if vcp in NOISE else ""
             print(f"  {vcp}: {o}→{n}{tag}")
-
-    do_diff = do_d
 
     # ── watch / discover (turn the OSD; Ctrl-C stops) ─────────────────────────
     def do_watch(self, arg):

@@ -109,15 +109,15 @@ wrote — not that the code controls the labelled feature, nor that anything vis
 happened, nor whether one setting silently moves another. `idebug` puts a human +
 the monitor's OSD in the loop to settle that:
 
-| Type        | Does                                                          |
-|-------------|--------------------------------------------------------------|
-| `50` / `cinema` | set + verify read-back; prints Δ and what *else* changed |
-| `w <v>`     | write-only (fire-and-forget / unreadable controls)           |
-| `r`         | read current value (+ monitor-reported max)                  |
-| `watch`     | poll this code while you turn the **OSD** — proves the code is right (Ctrl-C stops) |
-| `d`         | diff every readable code vs entry — reveals coupling         |
-| `use <ctrl>`| switch focus (e.g. flip night-mode, then `d` to see brightness move) |
-| `note <txt>`| record an observation · `q` quit (offers restore)            |
+| Command          | Does                                                     |
+|------------------|----------------------------------------------------------|
+| `set <val>` / `50` / `cinema` | set + verify read-back; prints Δ and what *else* changed |
+| `lazyset <val>`  | write-only (fire-and-forget / unreadable controls)       |
+| `get`            | read current value (+ monitor-reported max)              |
+| `watch`          | poll this code while you turn the **OSD** — proves the code is right (Ctrl-C stops) |
+| `diff`           | diff every readable code vs entry — reveals coupling     |
+| `use <ctrl>`     | switch focus (e.g. flip night-mode, then `diff` to see brightness move) |
+| `note <txt>`     | record an observation · `q` quit (offers restore)        |
 
 After each accepted write it asks `visible change? [y/N/skip]` — the only way to
 catch a register that stores a value but does nothing. Every action is logged to

@@ -249,7 +249,7 @@ def test_console_dispatch_smoke(mon, ddc):
     mon.values["10"] = 5
     t = _targets()
     con = Console(Session(ddc, focus=t["brightness"]), "brightness", t)
-    con.onecmd("r")
+    con.onecmd("get")
     con.onecmd("note flickered")
-    con.onecmd("d")
+    con.onecmd("diff")
     assert con.s.log[-1] == {"action": "note", "text": "flickered"}
