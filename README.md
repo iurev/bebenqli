@@ -115,7 +115,8 @@ the monitor's OSD in the loop to settle that:
 | `lazyset <val>`  | write-only (fire-and-forget / unreadable controls)       |
 | `get`            | read current value (+ monitor-reported max)              |
 | `watch`          | poll this code while you turn the **OSD** — proves the code is right (Ctrl-C stops) |
-| `diff`           | diff every readable code vs entry — reveals coupling     |
+| `watch all`      | live-stream **every** readable code — watch one value move while you change another on the OSD (catches coupling) |
+| `diff`           | one-shot: diff every readable code vs entry — reveals coupling |
 | `use <ctrl>`     | switch focus (e.g. flip night-mode, then `diff` to see brightness move) |
 | `note <txt>`     | record an observation · `q` quit (offers restore)        |
 

@@ -23,6 +23,14 @@ def test_snapshot_reads_mapped_readable(mon, ddc):
     assert snap["10"] == 80 and snap["62"] == 23
 
 
+def test_snapshot_progress_callback_fires_per_read(mon, ddc):
+    seen = []
+    _sess(ddc).snapshot(progress=lambda i, t, vcp: seen.append((i, t, vcp)))
+    assert seen[0][0] == 1                          # 1-based index
+    assert len(seen) == seen[0][1]                  # called once per readable code
+    assert all(t == seen[0][1] for _, t, _ in seen)  # total constant
+
+
 def test_snapshot_skips_noread_and_unanswered(mon, ddc):
     mon.values["10"] = 80                      # d9 color-temp is noread -> absent
     snap = _sess(ddc).snapshot()
@@ -124,6 +132,13 @@ def test_record_watch_persists_trail(mon, ddc):
     s = _sess(ddc)
     s.record_watch("10", [1, 2, 3])
     assert s.log[-1] == {"action": "watch", "vcp": "10", "observed": [1, 2, 3]}
+
+
+def test_record_watch_all_persists_events(mon, ddc):
+    s = _sess(ddc)
+    s.record_watch_all([["d1", 0, 1], ["10", 80, 55]])
+    assert s.log[-1] == {"action": "watch-all",
+                         "events": [["d1", 0, 1], ["10", 80, 55]]}
 
 
 def test_record_discovery_keeps_only_movers(mon, ddc):
