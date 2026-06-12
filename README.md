@@ -16,7 +16,7 @@ a pile of undocumented BenQ features, without the OSD or BenQ's official app.
 [![python 3.8+](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/)
 [![license MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.4** — expect
+Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.5** — expect
 rough edges.
 
 ![bebenqli TUI](https://github.com/user-attachments/assets/74a4b32b-ff1a-4ccf-a0cb-66d1e9b2fc47)
@@ -169,7 +169,7 @@ other sub-features are write-only. On/off is a separate register (`d7`).
 
 ## Limitations / scope
 
-- **RD280U only**, **Linux only**, v0.0.4. No Windows/macOS, no other models.
+- **RD280U only**, **Linux only**, v0.0.5. No Windows/macOS, no other models.
 - Several codes are write-only (can't be read back to verify state).
 - Mute (`8d`) is unreliable on this firmware; use Volume=0.
 - Minimally maintained — issues/PRs welcome but responses may be slow.
