@@ -1,7 +1,7 @@
 import pytest
 
 import bebenqli as b
-from bebenqli.idebug import Session
+from bebenqli.idebug import Session, Console, _targets
 
 
 def _sess(ddc):
@@ -167,3 +167,23 @@ def test_step_appends_distinct_only():
 def test_rank_movers_most_changed_first():
     ranked = Session.rank_movers({"a": [1], "b": [1, 2, 3]})
     assert ranked[0][0] == "b"
+
+
+# ── targets / console dispatch ───────────────────────────────────────────────
+def test_targets_includes_mapped_and_missing():
+    t = _targets()
+    assert "brightness" in t                       # mapped
+    assert "kvm-switch" in t                        # missing -> discovery target
+    assert "mute" not in t                          # dead -> not targetable
+
+
+def test_console_dispatch_smoke(mon, ddc):
+    # Console is pragma'd (interactive I/O); this just guards against crashes in
+    # the non-blocking command paths (r / note / d).
+    mon.values["10"] = 5
+    t = _targets()
+    con = Console(Session(ddc, focus=t["brightness"]), "brightness", t)
+    con.onecmd("r")
+    con.onecmd("note flickered")
+    con.onecmd("d")
+    assert con.s.log[-1] == {"action": "note", "text": "flickered"}

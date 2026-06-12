@@ -64,3 +64,19 @@ def test_run_no_args_launches_tui(mon, monkeypatch):
     assert b.run([]) == 0
     assert called.get("hit") is True
     assert called["ddc"].cmd == b.build_cmd("7")
+
+
+def test_run_idebug_dispatches(mon, monkeypatch):
+    called = {}
+    monkeypatch.setattr(b.idebug, "main",
+                        lambda ddc, name: called.update(ddc=ddc, name=name) or 0)
+    assert b.run(["--bus", "9", "idebug", "brightness"]) == 0
+    assert called["name"] == "brightness" and called["ddc"].bus == "9"
+
+
+def test_run_idebug_without_name(mon, monkeypatch):
+    called = {}
+    monkeypatch.setattr(b.idebug, "main",
+                        lambda ddc, name: called.update(name=name) or 0)
+    assert b.run(["idebug"]) == 0
+    assert called["name"] is None

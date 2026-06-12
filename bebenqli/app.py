@@ -3,7 +3,7 @@ or the TUI. Calls tui.main by attribute so tests can patch it."""
 import argparse
 import sys
 
-from . import tui
+from . import idebug, tui
 from ._version import __version__
 from .cli import cli
 from .ddc import Ddc, resolve_bus, MODEL
@@ -36,6 +36,8 @@ def run(argv=None):
     ddc = Ddc(bus)
 
     if rest:
+        if rest[0] == "idebug":
+            return idebug.main(ddc, rest[1] if len(rest) > 1 else None)
         return cli(ddc, rest)
     tui.main(ddc)
     return 0
