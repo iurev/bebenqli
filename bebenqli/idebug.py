@@ -10,6 +10,7 @@ This is the testable counterpart to the TUI's threaded `!` discover overlay
 from collections import namedtuple
 
 from .cli import _cli_controls, _resolve
+from .controls import SCAN_CODES
 from .format import _fmt
 
 # status: verified | mismatch | writeonly | failed
@@ -97,6 +98,31 @@ class Session:
                 self.ddc.setvcp(vcp, val, ctrl.get("chan"), ctrl.get("noverify"))
                 n += 1
         return n
+
+    # ── discovery (unmapped `missing` controls) ──────────────────────────────
+    def baseline_codes(self):
+        # Read every discovery candidate once; keep the codes that answer.
+        return {code: v for code in SCAN_CODES
+                if (v := self.ddc.getvcp(code)) is not None}
+
+    def poll_once(self, code, prev):
+        # One watch tick: (value, did-it-move-since-prev).
+        v = self.ddc.getvcp(code)
+        return v, (v is not None and v != prev)
+
+    @staticmethod
+    def step(trails, code, v):
+        # Append v to a code's trail if distinct from its last value. -> appended?
+        trail = trails.setdefault(code, [])
+        if not trail or trail[-1] != v:
+            trail.append(v)
+            return True
+        return False
+
+    @staticmethod
+    def rank_movers(trails):
+        # Codes that moved most while you wiggled the setting, most-changed first.
+        return sorted(trails.items(), key=lambda kv: -len(kv[1]))
 
     def yaml_doc(self):
         return {"control": self.focus["label"] if self.focus else "discover",

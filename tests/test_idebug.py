@@ -137,3 +137,33 @@ def test_yaml_doc_discovery_has_no_focus(mon, ddc):
 
 def _cm_idx():
     return next(i for i, c in enumerate(b.CONTROLS) if c.get("label") == "Brightness")
+
+
+# ── discovery ────────────────────────────────────────────────────────────────
+def test_baseline_codes_keeps_only_responders(mon, ddc):
+    assert "ca" in b.SCAN_CODES                   # sanity: an unmapped candidate
+    mon.values["ca"] = 5
+    base = _sess(ddc).baseline_codes()
+    assert base["ca"] == 5
+    assert "cc" not in base                        # unset candidate -> no answer
+
+
+def test_poll_once_detects_move(mon, ddc):
+    mon.values["10"] = 5
+    s = _sess(ddc)
+    assert s.poll_once("10", None) == (5, True)
+    assert s.poll_once("10", 5) == (5, False)
+    assert s.poll_once("ca", 0) == (None, False)   # unreadable -> no move
+
+
+def test_step_appends_distinct_only():
+    trails = {}
+    assert Session.step(trails, "ca", 5) is True
+    assert Session.step(trails, "ca", 5) is False
+    assert Session.step(trails, "ca", 6) is True
+    assert trails == {"ca": [5, 6]}
+
+
+def test_rank_movers_most_changed_first():
+    ranked = Session.rank_movers({"a": [1], "b": [1, 2, 3]})
+    assert ranked[0][0] == "b"
