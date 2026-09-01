@@ -19,6 +19,10 @@ a pile of undocumented BenQ features, without the OSD or BenQ's official app.
 Built on [`ddcutil`](https://www.ddcutil.com/). Linux only. **v0.0.5** — expect
 rough edges.
 
+Looking for a macOS app? See [**Didact**](https://github.com/gingerbeardman/Didact)
+(formerly BtnQ), a menu-bar display controller that builds on this RD280U mapping
+and can learn controls from other displays.
+
 ![bebenqli TUI](https://github.com/user-attachments/assets/74a4b32b-ff1a-4ccf-a0cb-66d1e9b2fc47)
 
 ---
